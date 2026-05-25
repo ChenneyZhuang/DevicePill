@@ -147,23 +147,15 @@ class DeviceMonitorService : Service() {
             }
         }
 
-        // ── Improved notification content ──
+        // ── Minimal notification content ──
         val title: String
-        val text: String
         val subText: String
 
         if (isCharging) {
-            if (watts >= 0.5) {
-                title = "\uD83D\uDCA5 ${"%.0f".format(watts)}W $chargeType"
-                text = "$pct% · ${"%.1f".format(tempC)}℃ · ${"%.1f".format(voltageV)}V"
-            } else {
-                title = "\uD83D\uDCA5 $chargeType"
-                text = "$pct% · ${"%.1f".format(tempC)}℃"
-            }
+            title = if (watts >= 0.5) "${"%.0f".format(watts)}W" else "充电中"
             subText = "充电中"
         } else {
-            title = "${"%.1f".format(tempC)}℃ · ${"%.1f".format(voltageV)}V"
-            text = ""
+            title = "${"%.1f".format(tempC)}℃"
             subText = "未充电"
         }
 
@@ -171,7 +163,6 @@ class DeviceMonitorService : Service() {
         val builder = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
             .setContentTitle(title)
-            .setContentText(text)
             .setSubText(subText)
             .setOngoing(true)
             .setOnlyAlertOnce(true)

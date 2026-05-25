@@ -223,7 +223,7 @@ fun ChargingPillApp() {
 
                 SetupGuide(context, currentRing[1])
                 Spacer(Modifier.height(10.dp))
-                Text("DevicePill v11.0", fontSize = 10.sp, color = LLColors.textMuted.copy(alpha = 0.4f))
+                Text("DevicePill v1.0", fontSize = 10.sp, color = LLColors.textMuted.copy(alpha = 0.4f))
                 Spacer(Modifier.height(36.dp))
             }
         }

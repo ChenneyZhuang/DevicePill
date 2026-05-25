@@ -162,8 +162,8 @@ class DeviceMonitorService : Service() {
             }
             subText = "充电中"
         } else {
-            title = "\uD83D\uDD0B $pct%"
-            text = "${"%.1f".format(tempC)}℃ · ${"%.1f".format(voltageV)}V"
+            title = "${"%.1f".format(tempC)}℃ · ${"%.1f".format(voltageV)}V"
+            text = "电池 $pct%"
             subText = "未充电"
         }
 

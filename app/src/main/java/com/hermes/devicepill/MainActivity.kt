@@ -1,14 +1,9 @@
 package com.hermes.devicepill
 
 import android.Manifest
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
+import android.content.*
 import android.content.pm.PackageManager
-import android.os.BatteryManager
-import android.os.Build
-import android.os.Bundle
+import android.os.*
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -35,7 +30,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -44,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import kotlin.math.*
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,9 +47,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// ============================================================
-// LLMonitor color palettes (extracted from decompiled APK)
-// ============================================================
 object LLColors {
     val dynamicRing = listOf(Color(0xFF40C0F4), Color(0xFFE86535), Color(0xFFF9E804), Color(0xFF32D653))
     val jiziRing = listOf(Color(0xFFE4BFFF), Color(0xFFCCA3FF), Color(0xFF8E57FF), Color(0xFF6346FF))
@@ -69,6 +61,51 @@ object LLColors {
 }
 
 // ============================================================
+// Battery snapshot (collected for history)
+// ============================================================
+data class BatterySnapshot(val pct: Int, val charging: Boolean, val watts: Float, val temp: Float, val voltage: Double, val currentMa: Int, val chargeType: String, val health: String, val tech: String)
+
+fun readBatterySnapshot(ctx: Context): BatterySnapshot {
+    val intent = ctx.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+    val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, 0) ?: 0
+    val scale = intent?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
+    val pct = if (scale > 0) level * 100 / scale else 0
+    val plugged = intent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
+    val charging = plugged != 0
+    val chargeType = when (plugged) {
+        BatteryManager.BATTERY_PLUGGED_AC -> "超级闪充"
+        BatteryManager.BATTERY_PLUGGED_USB -> "USB 充电"
+        BatteryManager.BATTERY_PLUGGED_WIRELESS -> "无线充电"
+        else -> if (charging) "充电中" else "未充电"
+    }
+    val health = when (intent?.getIntExtra(BatteryManager.EXTRA_HEALTH, 1) ?: 1) {
+        BatteryManager.BATTERY_HEALTH_GOOD -> "良好"
+        BatteryManager.BATTERY_HEALTH_OVERHEAT -> "过热"
+        BatteryManager.BATTERY_HEALTH_DEAD -> "损坏"
+        BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE -> "过压"
+        BatteryManager.BATTERY_HEALTH_COLD -> "过冷"
+        else -> "正常"
+    }
+    val tech = intent?.getStringExtra(BatteryManager.EXTRA_TECHNOLOGY) ?: ""
+    val tempC = (intent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0) / 10f
+    val mv = intent?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0) ?: 0
+    val voltage = mv / 1000.0
+    var watts = 0f
+    var currentMa = 0
+    if (charging) {
+        val bm = ctx.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
+        if (bm != null) {
+            val raw = runCatching { bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW) }.getOrDefault(Int.MIN_VALUE)
+            if (raw != Int.MIN_VALUE) {
+                var ma = raw; if (abs(ma) > 10000) ma /= 1000
+                currentMa = abs(ma); watts = (voltage * abs(ma) / 1000.0).toFloat()
+            }
+        }
+    }
+    return BatterySnapshot(pct, charging, watts, tempC, voltage, currentMa, chargeType, health, tech)
+}
+
+// ============================================================
 // App
 // ============================================================
 @OptIn(ExperimentalMaterial3Api::class)
@@ -76,79 +113,48 @@ object LLColors {
 fun ChargingPillApp() {
     val context = LocalContext.current
     var themeIndex by remember { mutableIntStateOf(0) }
-    val themes = listOf("动感", "极紫", "海洋", "日落")
+    val themeNames = listOf("动感", "极紫", "海洋", "日落")
     val ringColors = listOf(LLColors.dynamicRing, LLColors.jiziRing, LLColors.oceanRing, LLColors.sunsetRing)
     val currentRing = ringColors[themeIndex]
 
-    // Battery state
-    var batteryPct by remember { mutableIntStateOf(0) }
-    var isCharging by remember { mutableStateOf(false) }
+    // Live battery state (reacts to broadcast changes)
+    var pct by remember { mutableIntStateOf(0) }
+    var charging by remember { mutableStateOf(false) }
     var watts by remember { mutableDoubleStateOf(0.0) }
     var voltage by remember { mutableDoubleStateOf(0.0) }
     var currentMa by remember { mutableIntStateOf(0) }
     var tempC by remember { mutableFloatStateOf(0f) }
-    var chargingType by remember { mutableStateOf("未充电") }
-    var batteryHealth by remember { mutableStateOf("良好") }
-    var batteryTech by remember { mutableStateOf("") }
+    var chargeType by remember { mutableStateOf("未充电") }
+    var health by remember { mutableStateOf("良好") }
+    var tech by remember { mutableStateOf("") }
     var isRunning by remember { mutableStateOf(DeviceMonitorService.isRunning(context)) }
-    val hasNotif = if (Build.VERSION.SDK_INT >= 33)
-        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-    else true
+    val hasNotif = if (Build.VERSION.SDK_INT >= 33) ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED else true
 
-    // History for curves (LLMonitor: PowerCurve + TempCurve)
+    // ⭐ FIX: Use periodic timer for curve history (not dependent on broadcast firing)
     val maxHistory = 60
     val powerHistory = remember { mutableStateListOf<Float>() }
     val tempHistory = remember { mutableStateListOf<Float>() }
-    var elapsedSeconds by remember { mutableIntStateOf(0) }
-    var lastUpdateTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-    // Battery receiver
+    // Periodic history sampler — runs every 2s independently
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(2000)
+            val snap = readBatterySnapshot(context)
+            if (powerHistory.size >= maxHistory) powerHistory.removeFirst()
+            if (tempHistory.size >= maxHistory) tempHistory.removeFirst()
+            powerHistory.add(snap.watts)
+            tempHistory.add(snap.temp)
+        }
+    }
+
+    // Battery broadcast receiver (for immediate UI updates)
     DisposableEffect(context) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) {
-                if (intent?.action != Intent.ACTION_BATTERY_CHANGED) return
-                val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, 0)
-                val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
-                batteryPct = if (scale > 0) level * 100 / scale else 0
-                val plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0)
-                isCharging = plugged != 0
-                chargingType = when (plugged) {
-                    BatteryManager.BATTERY_PLUGGED_AC -> "超级闪充"
-                    BatteryManager.BATTERY_PLUGGED_USB -> "USB 充电"
-                    BatteryManager.BATTERY_PLUGGED_WIRELESS -> "无线充电"
-                    else -> "未充电"
-                }
-                batteryHealth = when (intent.getIntExtra(BatteryManager.EXTRA_HEALTH, 1)) {
-                    BatteryManager.BATTERY_HEALTH_GOOD -> "良好"
-                    BatteryManager.BATTERY_HEALTH_OVERHEAT -> "过热"
-                    BatteryManager.BATTERY_HEALTH_DEAD -> "损坏"
-                    BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE -> "过压"
-                    BatteryManager.BATTERY_HEALTH_COLD -> "过冷"
-                    else -> "正常"
-                }
-                batteryTech = intent.getStringExtra(BatteryManager.EXTRA_TECHNOLOGY) ?: ""
-                tempC = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) / 10f
-                voltage = intent.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0) / 1000.0
-                val bm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
-                if (bm != null && isCharging) {
-                    val raw = runCatching { bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW) }.getOrDefault(Int.MIN_VALUE)
-                    if (raw != Int.MIN_VALUE) {
-                        var ma = raw; if (abs(ma) > 10000) ma /= 1000
-                        currentMa = abs(ma); watts = voltage * abs(ma) / 1000.0
-                    }
-                }
-                if (!isCharging) { watts = 0.0; currentMa = 0 }
-
-                // Update history ~once per second
-                val now = System.currentTimeMillis()
-                if (now - lastUpdateTime >= 1000) {
-                    lastUpdateTime = now
-                    elapsedSeconds++
-                    if (powerHistory.size >= maxHistory) powerHistory.removeFirst()
-                    if (tempHistory.size >= maxHistory) tempHistory.removeFirst()
-                    powerHistory.add(watts.toFloat())
-                    tempHistory.add(tempC)
-                }
+                val snap = readBatterySnapshot(context)
+                pct = snap.pct; charging = snap.charging; watts = snap.watts.toDouble()
+                voltage = snap.voltage; currentMa = snap.currentMa; tempC = snap.temp
+                chargeType = snap.chargeType; health = snap.health; tech = snap.tech
             }
         }
         context.registerReceiver(receiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
@@ -157,61 +163,58 @@ fun ChargingPillApp() {
 
     // Running state ticker
     DisposableEffect(Unit) {
-        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        val handler = android.os.Handler(Looper.getMainLooper())
         val ticker = object : Runnable { override fun run() { isRunning = DeviceMonitorService.isRunning(context); handler.postDelayed(this, 2000) } }
         handler.post(ticker)
         onDispose { handler.removeCallbacks(ticker) }
     }
 
-    MaterialTheme(
-        colorScheme = darkColorScheme(background = LLColors.bg, surface = LLColors.surface, primary = currentRing[1], onBackground = LLColors.textPrimary, onSurface = LLColors.textPrimary)
-    ) {
+    MaterialTheme(colorScheme = darkColorScheme(background = LLColors.bg, surface = LLColors.surface, primary = currentRing[1], onBackground = LLColors.textPrimary, onSurface = LLColors.textPrimary)) {
         Scaffold(containerColor = LLColors.bg,
-            topBar = {
-                TopAppBar(
-                    title = { Row { Text("⚡", fontSize = 20.sp); Spacer(Modifier.width(8.dp)); Text("充电·岛", fontWeight = FontWeight.Bold) } },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = LLColors.bg)
-                )
-            }
+            topBar = { TopAppBar(title = { Row { Text("⚡", fontSize = 20.sp); Spacer(Modifier.width(8.dp)); Text("充电·岛", fontWeight = FontWeight.Bold) } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = LLColors.bg)) }
         ) { padding ->
-            Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding).padding(horizontal = 20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding).padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Spacer(Modifier.height(4.dp))
 
-                // Theme chips
+                // ⭐ FIX: Simple clickable chips (not FilterChip which may block touches)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    themes.forEachIndexed { i, n -> FilterChip(i == themeIndex, { themeIndex = i }, { Text(n, fontSize = 12.sp) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = currentRing[0].copy(alpha = 0.15f), selectedLabelColor = currentRing[1]), border = FilterChipDefaults.filterChipBorder(true, i == themeIndex, borderColor = if (i == themeIndex) currentRing[1].copy(alpha = 0.3f) else Color.Transparent, selectedBorderColor = currentRing[1].copy(alpha = 0.3f))) }
+                    themeNames.forEachIndexed { i, name ->
+                        val selected = i == themeIndex
+                        val chipColor = if (selected) currentRing[1] else LLColors.textSecondary
+                        Surface(
+                            onClick = { themeIndex = i },
+                            shape = RoundedCornerShape(20.dp),
+                            color = if (selected) currentRing[0].copy(alpha = 0.12f) else Color.Transparent,
+                            border = if (selected) androidx.compose.foundation.BorderStroke(1.dp, currentRing[1].copy(alpha = 0.25f)) else androidx.compose.foundation.BorderStroke(1.dp, Color.Transparent)
+                        ) {
+                            Text(name, Modifier.padding(horizontal = 14.dp, vertical = 7.dp), fontSize = 12.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, color = chipColor)
+                        }
+                    }
                 }
 
                 Spacer(Modifier.height(20.dp))
-                ActiveRing(batteryPct, isCharging, watts, currentRing, Modifier.size(200.dp))
+                ActiveRing(pct, charging, watts, currentRing, Modifier.size(200.dp))
                 Spacer(Modifier.height(10.dp))
 
-                AnimatedVisibility(isCharging) { Column(horizontalAlignment = Alignment.CenterHorizontally) { ChargingBadge(chargingType, watts, currentRing[1]); Spacer(Modifier.height(14.dp)) } }
+                AnimatedVisibility(charging) { Column(horizontalAlignment = Alignment.CenterHorizontally) { ChargingBadge(chargeType, watts, currentRing[1]); Spacer(Modifier.height(14.dp)) } }
 
-                // ── Stats cards ──
-                StatsGrid(voltage, currentMa, tempC, batteryHealth, batteryTech, isCharging, currentRing[1])
+                StatsGrid(voltage, currentMa, tempC, health, tech, charging, currentRing[1])
 
-                Spacer(Modifier.height(16.dp))
-
-                // ── Power curve (LLMonitor: PowerCurveCard) ──
+                // ⭐ Power curve (always show if we have data)
                 if (powerHistory.size >= 2) {
-                    CurveCard("充电功率", powerHistory, currentRing, "W", watts.toFloat(), isCharging)
-                    Spacer(Modifier.height(12.dp))
-                }
-
-                // ── Temp curve (LLMonitor: TemperatureCurveCard) ──
-                if (tempHistory.size >= 2) {
-                    CurveCard("电池温度", tempHistory, listOf(Color(0xFF22C55E), Color(0xFFEAB308), Color(0xFFEF4444)), "℃", tempC, warn = tempC > 40)
                     Spacer(Modifier.height(16.dp))
+                    CurveCard("充电功率", powerHistory, currentRing, "W", watts.toFloat())
+                }
+                // ⭐ Temp curve
+                if (tempHistory.size >= 2) {
+                    Spacer(Modifier.height(12.dp))
+                    CurveCard("电池温度", tempHistory, listOf(Color(0xFF22C55E), Color(0xFFEAB308), Color(0xFFEF4444)), "℃", tempC)
                 }
 
-                // Permission
+                if (powerHistory.size >= 2) Spacer(Modifier.height(16.dp))
+
                 if (!hasNotif && Build.VERSION.SDK_INT >= 33) { NotifPermissionCard(context); Spacer(Modifier.height(14.dp)) }
 
-                // Toggle
                 ToggleButton(isRunning, hasNotif, currentRing) { if (isRunning) DeviceMonitorService.stop(context) else DeviceMonitorService.start(context); isRunning = !isRunning }
                 Spacer(Modifier.height(8.dp))
 
@@ -259,7 +262,7 @@ fun ChargingBadge(type: String, watts: Double, accent: Color) {
 }
 
 // ============================================================
-// Stats Cards — fixed 84dp (increased from 78dp to fix text clipping)
+// Stats Cards
 // ============================================================
 data class StatCardData(val icon: androidx.compose.ui.graphics.vector.ImageVector, val label: String, val value: String, val warn: Boolean = false)
 
@@ -275,10 +278,7 @@ fun StatsGrid(voltage: Double, current: Int, temp: Float, health: String, tech: 
     )
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         items.chunked(2).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                row.forEach { StatCard(it, charging, accent, Modifier.weight(1f)) }
-                if (row.size < 2) Spacer(Modifier.weight(1f))
-            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { row.forEach { StatCard(it, charging, accent, Modifier.weight(1f)) }; if (row.size < 2) Spacer(Modifier.weight(1f)) }
         }
     }
 }
@@ -296,16 +296,15 @@ fun StatCard(data: StatCardData, charging: Boolean, accent: Color, modifier: Mod
 }
 
 // ============================================================
-// Curve Card — LLMonitor style PowerCurve / TemperatureCurve
+// Curve Card
 // ============================================================
 @Composable
-fun CurveCard(title: String, values: List<Float>, colors: List<Color>, unit: String, currentVal: Float, charging: Boolean = false, warn: Boolean = false) {
-    val maxVal = values.maxOrNull()?.coerceAtLeast(1f) ?: 1f
-    val minVal = values.minOrNull()?.coerceAtLeast(0f) ?: 0f
-    val range = (maxVal - minVal).coerceAtLeast(0.1f)
-
-    val lineColor = when { warn -> Color(0xFFEF4444); charging -> colors[1]; else -> colors[0] }
-    val gradientBrush = Brush.verticalGradient(listOf(lineColor.copy(alpha = 0.15f), lineColor.copy(alpha = 0.02f)))
+fun CurveCard(title: String, values: List<Float>, colors: List<Color>, unit: String, currentVal: Float) {
+    val maxV = values.maxOrNull()?.coerceAtLeast(1f) ?: 1f
+    val minV = values.minOrNull()?.coerceAtLeast(0f) ?: 0f
+    val range = (maxV - minV).coerceAtLeast(0.1f)
+    val lineColor = colors[min(colors.size - 1, if (currentVal > 40f) 2 else 1)]
+    val fillBrush = Brush.verticalGradient(listOf(lineColor.copy(alpha = 0.12f), lineColor.copy(alpha = 0.01f)))
 
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = LLColors.surface), border = androidx.compose.foundation.BorderStroke(0.5.dp, LLColors.surfaceBorder)) {
         Column(Modifier.padding(14.dp)) {
@@ -317,43 +316,31 @@ fun CurveCard(title: String, values: List<Float>, colors: List<Color>, unit: Str
                 Text("${"%.1f".format(currentVal)}$unit", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = lineColor)
             }
             Spacer(Modifier.height(10.dp))
-            // Canvas line chart
             Canvas(Modifier.fillMaxWidth().height(56.dp).clipToBounds()) {
+                if (values.size < 2) return@Canvas
                 val w = size.width; val h = size.height; val pad = 4f
-                val stepX = if (values.size > 1) (w - pad * 2) / (values.size - 1) else 0f
+                val stepX = (w - pad * 2) / (values.size - 1)
 
-                // Fill area under curve
-                if (values.size >= 2) {
-                    val fillPath = Path().apply {
-                        moveTo(pad, h - pad)
-                        values.forEachIndexed { i, v ->
-                            val x = pad + i * stepX
-                            val y = h - pad - ((v - minVal) / range * (h - pad * 2))
-                            lineTo(x, y)
-                        }
-                        lineTo(pad + (values.size - 1) * stepX, h - pad)
-                        close()
-                    }
-                    drawPath(fillPath, gradientBrush)
+                // Fill area
+                val fillPath = Path().apply {
+                    moveTo(pad, h - pad)
+                    values.forEachIndexed { i, v -> lineTo(pad + i * stepX, h - pad - ((v - minV) / range * (h - pad * 2))) }
+                    lineTo(pad + (values.size - 1) * stepX, h - pad); close()
                 }
+                drawPath(fillPath, fillBrush)
 
                 // Line
-                if (values.size >= 2) {
-                    val linePath = Path()
-                    values.forEachIndexed { i, v ->
-                        val x = pad + i * stepX; val y = h - pad - ((v - minVal) / range * (h - pad * 2))
-                        if (i == 0) linePath.moveTo(x, y) else linePath.lineTo(x, y)
-                    }
-                    drawPath(linePath, lineColor, style = Stroke(width = 2.5f, cap = StrokeCap.Round, join = StrokeJoin.Round, pathEffect = PathEffect.cornerPathEffect(4f)))
+                val linePath = Path()
+                values.forEachIndexed { i, v ->
+                    val x = pad + i * stepX; val y = h - pad - ((v - minV) / range * (h - pad * 2))
+                    if (i == 0) linePath.moveTo(x, y) else linePath.lineTo(x, y)
                 }
+                drawPath(linePath, lineColor, style = Stroke(width = 2.5f, cap = StrokeCap.Round, join = StrokeJoin.Round, pathEffect = PathEffect.cornerPathEffect(4f)))
 
-                // Current value dot
-                if (values.isNotEmpty()) {
-                    val lastX = pad + (values.size - 1) * stepX
-                    val lastY = h - pad - ((values.last() - minVal) / range * (h - pad * 2))
-                    drawCircle(lineColor, 3.5f, Offset(lastX, lastY))
-                    drawCircle(lineColor.copy(alpha = 0.2f), 7f, Offset(lastX, lastY))
-                }
+                // Dot
+                val lx = pad + (values.size - 1) * stepX; val ly = h - pad - ((values.last() - minV) / range * (h - pad * 2))
+                drawCircle(lineColor, 3.5f, Offset(lx, ly))
+                drawCircle(lineColor.copy(alpha = 0.2f), 7f, Offset(lx, ly))
             }
         }
     }

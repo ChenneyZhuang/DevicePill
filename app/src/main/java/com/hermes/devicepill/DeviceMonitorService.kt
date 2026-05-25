@@ -223,7 +223,7 @@ class DeviceMonitorService : Service() {
                     val intent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
                     intent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
                 }.getOrDefault(0)
-                val delay = if (raw != 0) 3000L else 10000L
+                val delay = 3000L
                 handler.postDelayed(this, delay)
             }
         }

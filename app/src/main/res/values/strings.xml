@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">设备岛</string>
+    <string name="service_running">设备监控运行中</string>
+    <string name="service_stopped">设备监控已停止</string>
+    <string name="start_monitor">启动监控</string>
+    <string name="stop_monitor">停止监控</string>
+    <string name="preview">预览</string>
+    <string name="permissions_needed">需要通知权限</string>
+    <string name="grant">授予</string>
+    <string name="cpu_label">处理器</string>
+    <string name="memory_label">内存</string>
+    <string name="storage_label">存储</string>
+    <string name="battery_label">电池</string>
+    <string name="gpu_label">GPU</string>
+    <string name="display_label">屏幕</string>
+    <string name="system_label">系统</string>
+    <string name="sensor_label">传感器</string>
+    <string name="network_label">网络</string>
+    <string name="fluid_cloud_hint">实时数据会自动显示在流体云和锁屏岛上</string>
+</resources>

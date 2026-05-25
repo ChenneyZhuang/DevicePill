@@ -13,7 +13,7 @@ android {
         minSdk = 31
         targetSdk = 36
         versionCode = 1
-        versionName = "1.0.0"
+        versionName = "2.0.0"
     }
 
     buildTypes {
@@ -30,6 +30,14 @@ android {
 
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+
+    // Rename APK with version number: DevicePill-v2.0.0.apk
+    applicationVariants.all {
+        outputs.all {
+            (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName =
+                "DevicePill-v${defaultConfig.versionName}.apk"
+        }
+    }
 }
 
 dependencies {

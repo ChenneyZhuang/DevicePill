@@ -135,15 +135,15 @@ fun ChargingPillApp() {
     val powerHistory = remember { mutableStateListOf<Float>() }
     val tempHistory = remember { mutableStateListOf<Float>() }
 
-    // Periodic history sampler — runs every 2s independently
+    // Periodic history sampler — adaptive polling: 2s charging, 5s idle
     LaunchedEffect(Unit) {
         while (true) {
-            delay(2000)
             val snap = readBatterySnapshot(context)
             if (powerHistory.size >= maxHistory) powerHistory.removeFirst()
             if (tempHistory.size >= maxHistory) tempHistory.removeFirst()
             powerHistory.add(snap.watts)
             tempHistory.add(snap.temp)
+            delay(if (snap.charging) 2000L else 5000L)
         }
     }
 

@@ -71,3 +71,15 @@ A: 部分设备/充电器不返回电流值，电压和温度仍正常
 
 **Q: 后台被杀？**
 A: 设置 → 应用 → DevicePill → 电池 → 不限制
+
+---
+
+## 参考 & 致谢
+
+- **[LLMonitor](https://github.com/lele/llmonitor)** — 流体云通知技术方案（双通道 + ProgressStyle + `android.requestPromotedOngoing` extras），以及配色方案和卡片设计规格均从 LLMonitor APK 反编译学习
+- **[Android 官方 Compose 示例](https://github.com/android/compose-samples)** — Material 3 设计参考
+- **[Now in Android](https://github.com/android/nowinandroid)** — Google 官方 Compose 最佳实践参考
+
+---
+
+**Inspired by ColorOS 16 金标充电 · LLMonitor**

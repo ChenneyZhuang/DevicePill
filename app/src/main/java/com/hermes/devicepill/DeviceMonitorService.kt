@@ -163,7 +163,7 @@ class DeviceMonitorService : Service() {
             subText = "充电中"
         } else {
             title = "${"%.1f".format(tempC)}℃ · ${"%.1f".format(voltageV)}V"
-            text = "电池 $pct%"
+            text = ""
             subText = "未充电"
         }
 
@@ -202,7 +202,7 @@ class DeviceMonitorService : Service() {
     }
 
     // ============================================================
-    // Battery Monitoring (LLMonitor pattern)
+    // Battery Monitoring — adaptive polling for power saving
     // ============================================================
 
     private fun startMonitor() {
@@ -215,8 +215,16 @@ class DeviceMonitorService : Service() {
             override fun run() {
                 if (!monitorRunning) return
                 val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-                nm.notify(NOTIFICATION_ID, buildNotification(null))
-                handler.postDelayed(this, 3000)
+                val notif = buildNotification(null)
+                nm.notify(NOTIFICATION_ID, notif)
+
+                // Adaptive polling: 3s when charging, 10s when idle
+                val raw = runCatching {
+                    val intent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                    intent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
+                }.getOrDefault(0)
+                val delay = if (raw != 0) 3000L else 10000L
+                handler.postDelayed(this, delay)
             }
         }
         handler.post(runnable)

@@ -7,21 +7,25 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.os.Build
+import android.os.Bundle
 import android.os.IBinder
-import androidx.core.app.NotificationCompat
 import com.hermes.devicepill.info.DeviceInfo
 import kotlinx.coroutines.*
 
 /**
- * Foreground service that continuously monitors device performance
- * and displays live stats as a persistent notification.
+ * Foreground service that displays live device stats via ColorOS 16 流体云.
  *
- * On ColorOS 16, this notification automatically appears in:
- * - 流体云 (Fluid Cloud)
- * - 锁屏岛 (Lock Screen Island)
- * - Always-on Display
+ * Implementation follows the dual-channel architecture documented in
+ * sixiang-world/sy-ntfy-android LIVE_UPDATE_RESEARCH.md:
  *
- * No root required — all data via system APIs.
+ *   1) POST_PROMOTED_NOTIFICATIONS permission
+ *   2) NotificationChannel.setLiveUpdateEnabled(true) via reflection
+ *   3) android.requestPromotedOngoing = true in extras bundle
+ *   4) Notification.BigTextStyle (NO RemoteViews!)
+ *   5) Framework Notification.Builder (NOT Compat)
+ *   6) FLAG_ONGOING_EVENT
+ *   7) SDK 36+: setShortCriticalText(null)
  */
 class DeviceMonitorService : Service() {
 
@@ -29,7 +33,7 @@ class DeviceMonitorService : Service() {
     private var updateJob: Job? = null
 
     companion object {
-        const val CHANNEL_ID = "device_monitor"
+        const val CHANNEL_ID = "fluid_cloud_channel"
         const val NOTIFICATION_ID = 2001
         internal const val ACTION_STOP = "com.hermes.devicepill.STOP"
         private const val PREFS = "device_pill_prefs"
@@ -63,12 +67,27 @@ class DeviceMonitorService : Service() {
         val channel = NotificationChannel(
             CHANNEL_ID,
             "Charging Island",
-            NotificationManager.IMPORTANCE_LOW
+            NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
-            description = "实时充电数据 — 流体云 · 锁屏岛"
+            description = "Charging Island · 流体云 · 锁屏岛"
             setShowBadge(false)
+            // Enable fluid cloud / live update capability on the channel
+            enableLiveUpdate()
         }
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+    }
+
+    /**
+     * Reflection call: NotificationChannel.setLiveUpdateEnabled(true)
+     * This is a framework API (Android 8.0+), makes the channel eligible for fluid cloud.
+     */
+    private fun NotificationChannel.enableLiveUpdate() {
+        try {
+            val method = NotificationChannel::class.java.getMethod(
+                "setLiveUpdateEnabled", Boolean::class.java
+            )
+            method.invoke(this, true)
+        } catch (_: Exception) { /* best-effort */ }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -81,7 +100,7 @@ class DeviceMonitorService : Service() {
         }
 
         val snapshot = DeviceInfo.snapshot(this)
-        startForeground(NOTIFICATION_ID, buildNotification(this, snapshot))
+        startForeground(NOTIFICATION_ID, buildFluidCloudNotification(this, snapshot))
         startPeriodicUpdates()
         return START_STICKY
     }
@@ -101,31 +120,28 @@ class DeviceMonitorService : Service() {
                 delay(2000)
                 val snap = DeviceInfo.snapshot(this@DeviceMonitorService)
                 val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                nm.notify(NOTIFICATION_ID, buildNotification(this@DeviceMonitorService, snap))
+                nm.notify(NOTIFICATION_ID, buildFluidCloudNotification(this@DeviceMonitorService, snap))
             }
         }
     }
 }
 
 /**
- * Builds a compact notification for Fluid Cloud.
- * Shows key metrics: CPU temp, battery, memory usage.
+ * Builds a notification optimized for ColorOS 16 流体云.
+ *
+ * Uses the framework Notification.Builder (NOT Compat) to avoid
+ * RemoteViews incompatibility with the Live Updates API.
  */
-private fun buildNotification(context: Context, snap: com.hermes.devicepill.info.DeviceSnapshot): Notification {
-    val stopIntent = PendingIntent.getService(context, 0,
-        Intent(context, DeviceMonitorService::class.java).apply { action = DeviceMonitorService.ACTION_STOP },
-        PendingIntent.FLAG_IMMUTABLE)
-
-    val openIntent = PendingIntent.getActivity(context, 0,
-        Intent(context, MainActivity::class.java),
-        PendingIntent.FLAG_IMMUTABLE)
-
+private fun buildFluidCloudNotification(
+    context: Context,
+    snap: com.hermes.devicepill.info.DeviceSnapshot
+): Notification {
     val cpu = snap.cpu
     val bat = snap.battery
     val mem = snap.memory
 
-    // Compact title for Fluid Cloud pill — prioritize charging data
-    val title = if (bat.isCharging) {
+    // --- Title for fluid cloud pill ---
+    val title: String = if (bat.isCharging) {
         buildString {
             append("⚡ ")
             if (bat.powerW > 0) append("%.1fW · ".format(bat.powerW))
@@ -140,58 +156,77 @@ private fun buildNotification(context: Context, snap: com.hermes.devicepill.info
         }
     }
 
-    val body = buildString {
-        // Charging Island section
-        append("⚡ Charging Island")
-        append("\n状态: %s".format(bat.status))
-        append("  |  电量: %d%%".format(bat.levelPercent))
+    // --- BigText body ---
+    val bigTitle = "⚡ Charging Island"
+    val bigText = buildString {
+        append("状态: %s  |  电量: %d%%".format(bat.status, bat.levelPercent))
 
         if (bat.isCharging) {
             append("\n\n📊 充电参数")
-            if (bat.powerW > 0) {
-                append("\n瞬时功率: %.2fW".format(bat.powerW))
-            }
+            if (bat.powerW > 0) append("\n瞬时功率: %.2fW".format(bat.powerW))
             append("\n电池温度: %.1f°C".format(bat.temperatureC))
             append("\n电池电压: %.2fV".format(bat.voltageV))
-            if (bat.currentMa != 0) {
-                append("\n电池电流: %dmA".format(bat.currentMa))
-            }
+            if (bat.currentMa != 0) append("\n电池电流: %dmA".format(bat.currentMa))
             append("\n供电状态: %s".format(bat.chargeType))
         }
-
         append("\n电池状态: %s".format(bat.health))
 
-        // Capacity section
         if (bat.capacityTotalMah > 0) {
             append("\n\n🔋 容量信息")
-            append("\n系统剩余容量 / 估算总容量: %d / %d mAh".format(
+            append("\n剩余容量 / 总容量: %d / %d mAh".format(
                 bat.capacityRemainingMah, bat.capacityTotalMah))
-            append("\n对应电量占比: %d%%".format(bat.levelPercent))
+            append("\n电量占比: %d%%".format(bat.levelPercent))
         }
 
-        // Device section
-        append("\n\n🖥 设备状态")
-        if (cpu.temperatureC > 0) {
-            append("\nCPU: %.1f°C".format(cpu.temperatureC))
-        }
+        append("\n\n🖥 设备")
+        if (cpu.temperatureC > 0) append("\nCPU: %.1f°C".format(cpu.temperatureC))
         append("  |  内存: %d%%".format(mem.usagePercent))
-        if (cpu.currentFrequencyMHz > 0) {
-            append("\nCPU频率: %.0f MHz".format(cpu.currentFrequencyMHz))
-        }
-        append("\nCPU型号: %s (%d核)".format(cpu.model, cpu.cores))
+        if (cpu.currentFrequencyMHz > 0) append("\n频率: %.0f MHz".format(cpu.currentFrequencyMHz))
+        append("\n%s (%d核)".format(cpu.model, cpu.cores))
     }
 
-    return NotificationCompat.Builder(context, DeviceMonitorService.CHANNEL_ID)
+    // --- Intents ---
+    val stopIntent = PendingIntent.getService(context, 0,
+        Intent(context, DeviceMonitorService::class.java).apply {
+            action = DeviceMonitorService.ACTION_STOP
+        },
+        PendingIntent.FLAG_IMMUTABLE)
+
+    val openIntent = PendingIntent.getActivity(context, 0,
+        Intent(context, MainActivity::class.java),
+        PendingIntent.FLAG_IMMUTABLE)
+
+    // --- Build with framework Notification.Builder ---
+    val builder = Notification.Builder(context, DeviceMonitorService.CHANNEL_ID)
         .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
         .setContentTitle(title)
-        .setContentText(body)
-        .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+        .setContentText(bigText.lines().firstOrNull() ?: title)
+        .setStyle(Notification.BigTextStyle()
+            .setBigContentTitle(bigTitle)
+            .bigText(bigText))
         .setOngoing(true)
-        .setPriority(NotificationCompat.PRIORITY_LOW)
         .setCategory(Notification.CATEGORY_STATUS)
         .setContentIntent(openIntent)
-        .addAction(android.R.drawable.ic_media_pause, "停止监控", stopIntent)
-        .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+        .addAction(Notification.Action.Builder(
+            android.R.drawable.ic_media_pause, "停止", stopIntent
+        ).build())
+        .setVisibility(Notification.VISIBILITY_PUBLIC)
         .setShowWhen(false)
-        .build()
+
+    // --- Fluid cloud specific extras ---
+    val extras = Bundle()
+    extras.putBoolean("android.requestPromotedOngoing", true)
+    builder.setExtras(extras)
+
+    // FLAG_ONGOING_EVENT for live updates
+    builder.setFlag(Notification.FLAG_ONGOING_EVENT, true)
+
+    // SDK 36+: short critical text for live update
+    if (Build.VERSION.SDK_INT >= 36) {
+        try {
+            builder.setShortCriticalText(null)
+        } catch (_: Exception) { }
+    }
+
+    return builder.build()
 }

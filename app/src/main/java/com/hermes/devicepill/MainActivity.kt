@@ -1,9 +1,12 @@
 package com.hermes.devicepill
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -50,6 +53,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
+            val hasOverlay = Settings.canDrawOverlays(this)
             val hasNotif = if (Build.VERSION.SDK_INT >= 33)
                 ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
             else true
@@ -60,8 +64,13 @@ class MainActivity : ComponentActivity() {
                 onPrimary = Color.White, onBackground = TextPri, onSurface = TextPri
             )) {
                 DashboardScreen(
+                    hasOverlayPerm = hasOverlay,
                     hasNotifPerm = hasNotif,
                     isServiceRunning = isRunning,
+                    onRequestOverlay = {
+                        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:$packageName")))
+                    },
                     onRequestNotif = { notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) },
                     onToggleService = {
                         if (isRunning) DeviceMonitorService.stop(this) else DeviceMonitorService.start(this)
@@ -76,8 +85,10 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun DashboardScreen(
+    hasOverlayPerm: Boolean,
     hasNotifPerm: Boolean,
     isServiceRunning: Boolean,
+    onRequestOverlay: () -> Unit,
     onRequestNotif: () -> Unit,
     onToggleService: () -> Unit,
     context: android.content.Context
@@ -100,12 +111,12 @@ fun DashboardScreen(
             // -= Header =-
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(AccentDim), contentAlignment = Alignment.Center) {
-                    Text("⚙️", fontSize = 22.sp)
+                    Text("⚡", fontSize = 22.sp)
                 }
                 Spacer(Modifier.width(12.dp))
                 Column {
-                    Text("设备岛", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPri)
-                    Text("Device Monitor · 流体云 · 锁屏岛", fontSize = 11.sp, color = TextSec)
+                    Text("金标充电岛", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPri)
+                    Text("Charging Island · 悬浮窗充电显示", fontSize = 11.sp, color = TextSec)
                 }
             }
 
@@ -114,35 +125,47 @@ fun DashboardScreen(
             // -= Permission / Service Card =-
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Surface), shape = RoundedCornerShape(16.dp)) {
                 Column(Modifier.padding(16.dp)) {
+                    // Overlay permission — most important!
+                    if (!hasOverlayPerm) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Warning, null, tint = Red, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("需要「显示在其他应用上层」权限", fontSize = 14.sp, color = TextPri, modifier = Modifier.weight(1f))
+                            TextButton(onClick = onRequestOverlay) { Text("去开启", color = Accent) }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
                     if (!hasNotifPerm) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Warning, null, tint = Yellow, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("需要通知权限才能显示在流体云", fontSize = 14.sp, color = TextPri, modifier = Modifier.weight(1f))
+                            Text("需要通知权限（后台运行用）", fontSize = 14.sp, color = TextPri, modifier = Modifier.weight(1f))
                             TextButton(onClick = onRequestNotif) { Text("授予", color = Accent) }
                         }
                         Spacer(Modifier.height(8.dp))
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         val bgColor = if (isServiceRunning) Red.copy(alpha = 0.8f) else Accent
+                        val enabled = hasOverlayPerm && hasNotifPerm
                         Button(
                             onClick = onToggleService,
-                            colors = ButtonDefaults.buttonColors(containerColor = bgColor),
+                            enabled = enabled,
+                            colors = ButtonDefaults.buttonColors(containerColor = bgColor, disabledContainerColor = bgColor.copy(alpha = 0.3f)),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(if (isServiceRunning) Icons.Default.Stop else Icons.Default.PlayArrow, null, tint = Color.White)
                             Spacer(Modifier.width(8.dp))
-                            Text(if (isServiceRunning) "停止监控" else "启动监控", color = Color.White)
+                            Text(if (isServiceRunning) "停止" else "启动", color = Color.White)
                         }
                         Spacer(Modifier.width(12.dp))
                         Text(
-                            if (isServiceRunning) "● 流体云运行中" else "○ 已停止",
+                            if (isServiceRunning) "● 悬浮窗运行中" else "○ 已停止",
                             fontSize = 13.sp, color = if (isServiceRunning) Green else TextSec
                         )
                     }
-                    if (!isServiceRunning) {
+                    if (!isServiceRunning && hasOverlayPerm && hasNotifPerm) {
                         Spacer(Modifier.height(4.dp))
-                        Text("启动后实时数据会出现在流体云和锁屏岛", fontSize = 11.sp, color = TextSec)
+                        Text("启动后在摄像头旁显示金标充电信息", fontSize = 11.sp, color = TextSec)
                     }
                 }
             }
@@ -238,7 +261,7 @@ fun DashboardScreen(
             }
 
             Spacer(Modifier.height(32.dp))
-            Text("DevicePill v1.0 · 流体云 & 锁屏岛", fontSize = 11.sp, color = TextSec.copy(alpha = 0.5f), modifier = Modifier.fillMaxWidth().wrapContentWidth(Alignment.CenterHorizontally))
+            Text("Charging Island v4.0 · 悬浮窗充电显示", fontSize = 11.sp, color = TextSec.copy(alpha = 0.5f), modifier = Modifier.fillMaxWidth().wrapContentWidth(Alignment.CenterHorizontally))
         }
     }
 }

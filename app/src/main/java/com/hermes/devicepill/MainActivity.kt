@@ -20,11 +20,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -452,28 +447,50 @@ fun StatCardGrid(
     health: String, tech: String, pct: Int,
     isCharging: Boolean
 ) {
-    // 2-column staggered layout for visual interest
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+    // 2-column layout (not Lazy — nested in scroll)
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        userScrollEnabled = false
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Row 1: Voltage (full width), Current (half)
-        item { StatTile("电压", if (voltage > 0) "${"%.2f".format(voltage)}V" else "--", Icons.Outlined.Bolt, isCharging) }
-        item { StatTile("电流", if (current > 0) "${current}mA" else "--", Icons.Outlined.Speed, isCharging) }
-
-        // Row 2: Temperature, Battery Health
-        item { StatTile("温度", "${"%.1f".format(temp)}℃", Icons.Outlined.Thermostat, isCharging, warnIf = temp > 40) }
-        item { StatTile("健康", health, Icons.Outlined.FavoriteBorder, isCharging) }
-
-        // Row 3: Battery Tech, Capacity
-        item {
-            if (tech.isNotEmpty()) StatTile("技术", tech, Icons.Outlined.Memory, isCharging)
-            else StatTile("容量", if (pct > 0) "$pct%" else "--", Icons.Outlined.BatteryFull, isCharging)
+        // Row 1: Voltage + Current
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Box(modifier = Modifier.weight(1f)) {
+                StatTile("电压", if (voltage > 0) "${"%.2f".format(voltage)}V" else "--", Icons.Outlined.Bolt, isCharging)
+            }
+            Box(modifier = Modifier.weight(1f)) {
+                StatTile("电流", if (current > 0) "${current}mA" else "--", Icons.Outlined.Speed, isCharging)
+            }
         }
-        item { StatTile("状态", if (isCharging) "充电中" else "未充电", Icons.Outlined.Power, isCharging) }
+
+        // Row 2: Temperature + Health
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Box(modifier = Modifier.weight(1f)) {
+                StatTile("温度", "${"%.1f".format(temp)}℃", Icons.Outlined.Thermostat, isCharging, warnIf = temp > 40)
+            }
+            Box(modifier = Modifier.weight(1f)) {
+                StatTile("健康", health, Icons.Outlined.FavoriteBorder, isCharging)
+            }
+        }
+
+        // Row 3: Tech/Capacity + Status
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Box(modifier = Modifier.weight(1f)) {
+                if (tech.isNotEmpty()) StatTile("技术", tech, Icons.Outlined.Memory, isCharging)
+                else StatTile("容量", if (pct > 0) "$pct%" else "--", Icons.Outlined.BatteryFull, isCharging)
+            }
+            Box(modifier = Modifier.weight(1f)) {
+                StatTile("状态", if (isCharging) "充电中" else "未充电", Icons.Outlined.Power, isCharging)
+            }
+        }
     }
 }
 

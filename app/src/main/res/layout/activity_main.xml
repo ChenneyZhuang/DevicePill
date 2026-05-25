@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FF0D1117"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:gravity="center_horizontal">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="⚡ 金标充电岛"
+        android:textSize="28sp"
+        android:textColor="#FFE6EDF3"
+        android:textStyle="bold"
+        android:layout_marginTop="32dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Charging Island · 悬浮窗充电显示"
+        android:textSize="12sp"
+        android:textColor="#FF8B949E"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="24dp" />
+
+    <!-- Overlay permission -->
+    <Button
+        android:id="@+id/overlay_btn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="⚡ 授权悬浮窗 (必要!)"
+        android:textColor="#FFFFFFFF"
+        android:backgroundTint="#FFFF6B35"
+        android:layout_marginBottom="8dp" />
+
+    <!-- Notification permission -->
+    <Button
+        android:id="@+id/notif_btn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="🔔 授权通知"
+        android:textColor="#FFFFFFFF"
+        android:backgroundTint="#FFD29922"
+        android:visibility="gone"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Status -->
+    <TextView
+        android:id="@+id/status_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="○ 已停止"
+        android:textSize="16sp"
+        android:textColor="#FF8B949E"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Toggle -->
+    <Button
+        android:id="@+id/toggle_btn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="▶ 启动充电岛"
+        android:textColor="#FFFFFFFF"
+        android:backgroundTint="#FF3FB950"
+        android:enabled="false" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="启动后插上充电器，摄像头旁显示充电信息"
+        android:textSize="11sp"
+        android:textColor="#FF8B949E"
+        android:layout_marginTop="8dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Charging Island v4.1"
+        android:textSize="10sp"
+        android:textColor="#338B949E"
+        android:layout_marginTop="64dp" />
+
+</LinearLayout>

@@ -122,13 +122,15 @@ class DeviceMonitorService : Service() {
         val plugged = pluggedOverride ?: intent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
         val tempDeci = intent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0
         val tempC = tempDeci / 10f
+        val mv = intent?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0) ?: 0
+        val voltageV = mv / 1000.0
 
         val isCharging = plugged != 0
-        val supply = when (plugged) {
-            BatteryManager.BATTERY_PLUGGED_AC -> "快速充电"
-            BatteryManager.BATTERY_PLUGGED_USB -> "USB供电"
+        val chargeType = when (plugged) {
+            BatteryManager.BATTERY_PLUGGED_AC -> "超级闪充"
+            BatteryManager.BATTERY_PLUGGED_USB -> "USB 充电"
             BatteryManager.BATTERY_PLUGGED_WIRELESS -> "无线充电"
-            else -> if (isCharging) "充电中" else "未充电"
+            else -> if (isCharging) "充电中" else ""
         }
 
         // Get power watts
@@ -140,22 +142,40 @@ class DeviceMonitorService : Service() {
                 if (raw != Int.MIN_VALUE) {
                     var ma = raw
                     if (abs(ma) > 10000) ma /= 1000
-                    val mv = intent?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0) ?: 0
                     watts = (mv / 1000.0) * abs(ma) / 1000.0
                 }
             }
         }
 
-        val title = if (isCharging && watts >= 0.5) "${"%.0f".format(watts)}W" else if (isCharging) "充电" else "--W"
-        val text = "$pct% • $supply • ${"%.1f".format(tempC)}℃"
+        // ── Improved notification content ──
+        val title: String
+        val text: String
+        val subText: String
+
+        if (isCharging) {
+            if (watts >= 0.5) {
+                title = "\uD83D\uDCA5 ${"%.0f".format(watts)}W $chargeType"
+                text = "$pct% · ${"%.1f".format(tempC)}℃ · ${"%.1f".format(voltageV)}V"
+            } else {
+                title = "\uD83D\uDCA5 $chargeType"
+                text = "$pct% · ${"%.1f".format(tempC)}℃"
+            }
+            subText = "充电中"
+        } else {
+            title = "\uD83D\uDD0B $pct%"
+            text = "${"%.1f".format(tempC)}℃ · ${"%.1f".format(voltageV)}V"
+            subText = "未充电"
+        }
 
         // LLMonitor pattern: Framework Notification.Builder with CHANNEL_ID
         val builder = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
             .setContentTitle(title)
             .setContentText(text)
+            .setSubText(subText)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            .setColor(0xFFFFD700.toInt())
             .setContentIntent(PendingIntent.getActivity(this, 0,
                 Intent(this, MainActivity::class.java),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))

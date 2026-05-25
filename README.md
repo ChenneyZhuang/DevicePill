@@ -93,7 +93,7 @@ A: 设置 → 应用 → DevicePill → 电池 → 不限制
 
 ## 参考 / Credits
 
-- **[LLMonitor](https://github.com/lele/llmonitor)** — 流体云技术方案（双通道 + `ProgressStyle` + `android.requestPromotedOngoing`）、配色及卡片设计规格均从 LLMonitor APK 反编译学习。*Fluid cloud technique, color palettes, and card design specs learned from LLMonitor APK decompilation.*
+- **[LLMonitor](https://github.com/lele/llmonitor)** — 流体云技术方案（双通道 + `ProgressStyle` + `android.requestPromotedOngoing`）参考自 LLMonitor 的实现；配色及卡片设计规格亦学习自该项目。*Fluid cloud technique, color palettes, and card design specs referenced from LLMonitor.*
 - **[Android Compose Samples](https://github.com/android/compose-samples)** — Material 3 设计参考
 - **[Now in Android](https://github.com/android/nowinandroid)** — Compose 最佳实践
 

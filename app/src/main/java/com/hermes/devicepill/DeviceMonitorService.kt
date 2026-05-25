@@ -18,9 +18,9 @@ import android.os.Looper
 import kotlin.math.abs
 
 /**
- * ColorOS 16 流体云 — 基于 LLMonitor 反编译验证
+ * ColorOS 16 流体云 — 技术方案参考自 LLMonitor
  *
- * LLMonitor's approach (verified working on ColorOS 16):
+ * Key technique (verified working on ColorOS 16):
  *   1. Framework Notification.Builder (NOT Compat)
  *   2. CHANNEL importance LOW (=2), progress channel DEFAULT (=3)
  *   3. API 36+: Notification.ProgressStyle with battery level progress

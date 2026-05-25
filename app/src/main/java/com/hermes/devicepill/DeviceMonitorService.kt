@@ -33,6 +33,7 @@ class DeviceMonitorService : Service() {
     private var monitorRunning = false
     private val handler = Handler(Looper.getMainLooper())
     private var batteryReceiver: BatteryReceiver? = null
+    private var prevCharging: Boolean? = null  // track charging state for fluid cloud transitions
 
     companion object {
         const val CHANNEL_ID = "battery_monitor"
@@ -142,8 +143,8 @@ class DeviceMonitorService : Service() {
             if (raw != Int.MIN_VALUE) {
                 var ma = raw
                 if (abs(ma) > 10000) ma /= 1000
-                currentMa = abs(ma)
-                watts = (mv / 1000.0) * abs(ma) / 1000.0
+                currentMa = ma
+                watts = (mv / 1000.0) * ma / 1000.0
             }
         }
 
@@ -152,7 +153,7 @@ class DeviceMonitorService : Service() {
         parts.add("$pct%")
         if (isCharging && chargeType.isNotEmpty()) parts.add(chargeType)
         parts.add("${"%.1f".format(voltageV)}V")
-        if (currentMa > 0) parts.add("${currentMa}mA")
+        if (currentMa != 0) parts.add("${currentMa}mA")
         parts.add("${"%.1f".format(tempC)}℃")
         val text = parts.joinToString(" · ")
 
@@ -209,14 +210,21 @@ class DeviceMonitorService : Service() {
             override fun run() {
                 if (!monitorRunning) return
                 val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+
+                // Check charging state BEFORE building notification
+                val intent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                val plugged = intent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
+                val nowCharging = plugged != 0
+
+                // Force fluid cloud re-evaluation on state change (cancel + re-notify)
+                if (prevCharging != null && nowCharging != prevCharging) {
+                    nm.cancel(NOTIFICATION_ID)
+                }
+                prevCharging = nowCharging
+
                 val notif = buildNotification(null)
                 nm.notify(NOTIFICATION_ID, notif)
 
-                // Adaptive polling: 3s when charging, 10s when idle
-                val raw = runCatching {
-                    val intent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-                    intent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
-                }.getOrDefault(0)
                 val delay = 3000L
                 handler.postDelayed(this, delay)
             }

@@ -133,36 +133,39 @@ class DeviceMonitorService : Service() {
             else -> if (isCharging) "充电中" else ""
         }
 
-        // Get power watts
+        // Get power watts + current (LLMonitor: reads even when not charging)
         var watts = 0.0
-        if (isCharging) {
-            val bm = getSystemService(BATTERY_SERVICE) as? BatteryManager
-            if (bm != null) {
-                val raw = runCatching { bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW) }.getOrDefault(Int.MIN_VALUE)
-                if (raw != Int.MIN_VALUE) {
-                    var ma = raw
-                    if (abs(ma) > 10000) ma /= 1000
-                    watts = (mv / 1000.0) * abs(ma) / 1000.0
-                }
+        var currentMa = 0
+        val bm = getSystemService(BATTERY_SERVICE) as? BatteryManager
+        if (bm != null) {
+            val raw = runCatching { bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW) }.getOrDefault(Int.MIN_VALUE)
+            if (raw != Int.MIN_VALUE) {
+                var ma = raw
+                if (abs(ma) > 10000) ma /= 1000
+                currentMa = abs(ma)
+                watts = (mv / 1000.0) * abs(ma) / 1000.0
             }
         }
 
-        // ── Minimal notification content ──
-        val title: String
-        val subText: String
+        // ── LLMonitor-style notification: full data content ──
+        val parts = mutableListOf<String>()
+        parts.add("$pct%")
+        if (isCharging && chargeType.isNotEmpty()) parts.add(chargeType)
+        parts.add("${"%.1f".format(voltageV)}V")
+        if (currentMa > 0) parts.add("${currentMa}mA")
+        parts.add("${"%.1f".format(tempC)}℃")
+        val text = parts.joinToString(" · ")
 
-        if (isCharging) {
-            title = if (watts >= 0.5) "${"%.0f".format(watts)}W" else "充电中"
-            subText = "充电中"
-        } else {
-            title = "${"%.1f".format(tempC)}℃"
-            subText = "未充电"
-        }
+        val title = if (isCharging && watts >= 0.5) "${"%.0f".format(watts)}W"
+                   else if (isCharging) "充电中"
+                   else "${"%.1f".format(tempC)}℃"
+        val subText = if (isCharging) "充电中" else "未充电"
 
         // LLMonitor pattern: Framework Notification.Builder with CHANNEL_ID
         val builder = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
             .setContentTitle(title)
+            .setContentText(text)
             .setSubText(subText)
             .setOngoing(true)
             .setOnlyAlertOnce(true)

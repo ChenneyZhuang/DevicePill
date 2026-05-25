@@ -11,30 +11,30 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.Build
-import android.os.Bundle
+import android.os.Handler
 import android.os.IBinder
-import androidx.core.app.NotificationCompat
+import android.os.Looper
+import kotlin.math.abs
 
 /**
- * ColorOS 16 流体云 — 金标充电显示
+ * ColorOS 16 流体云 — 基于 islanders 项目验证的实现
  *
- * Based on sy-ntfy-android's verified LiveUpdate implementation:
- *   1. NotificationCompat.Builder with setLiveUpdateEnabled(true)
- *   2. CATEGORY_PROGRESS + setOngoing(true)
- *   3. Framework builder: requestPromotedOngoing() + setShortCriticalText(null)
- *   4. android.requestPromotedOngoing bundle extra (ColorOS private API)
- *   5. Progress bar (battery level 0-100)
+ * Key pattern (verified working):
+ *   1. Notification.Builder (framework, NOT Compat)
+ *   2. IMPORTANCE_HIGH channel
+ *   3. setShortCriticalText("6.3W") — the status chip text!
+ *   4. setRequestPromotedOngoing(true) on API 36+
+ *   5. ProgressStyle via reflection for battery level
+ *   6. CATEGORY_STATUS, setOngoing(true), setOnlyAlertOnce(true)
  */
 class DeviceMonitorService : Service() {
 
+    private var monitorRunning = false
+    private val handler = Handler(Looper.getMainLooper())
     private var batteryReceiver: BatteryReceiver? = null
-    private var lastLevel = 0
-    private var lastIsCharging = false
-    private var lastPowerW = 0.0
-    private var lastTempC = 0f
 
     companion object {
-        const val CHANNEL_ID = "fluid_cloud_channel"
+        const val CHANNEL_ID = "island_charging"
         const val NOTIFICATION_ID = 2001
         internal const val ACTION_STOP = "com.hermes.devicepill.STOP"
 
@@ -55,189 +55,187 @@ class DeviceMonitorService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        val channel = NotificationChannel(CHANNEL_ID, "实时状态通知",
-            NotificationManager.IMPORTANCE_DEFAULT).apply {
-            description = "用于显示流体云动态信息"
+        // IMPORTANCE_HIGH — required for status chip promotion
+        val channel = NotificationChannel(CHANNEL_ID, "充电状态",
+            NotificationManager.IMPORTANCE_HIGH).apply {
+            description = "实时充电功率与电量"
             setShowBadge(false)
+            enableVibration(false)
+            setSound(null, null)
         }
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            stopChargingIsland()
+            stopMonitor()
             return START_NOT_STICKY
         }
-        startForeground(NOTIFICATION_ID, buildNotification(0, false, 0.0, 0f))
-        startBatteryMonitoring()
+        // Minimal foreground just to keep alive (separate from the LiveUpdate notification)
+        val pi = PendingIntent.getActivity(this, 0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val fgNotif = Notification.Builder(this, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
+            .setContentTitle("充电岛")
+            .setContentText("监控中")
+            .setOngoing(true)
+            .setContentIntent(pi)
+            .build()
+        startForeground(NOTIFICATION_ID, fgNotif)
+
+        startMonitor()
         return START_STICKY
     }
 
     override fun onBind(intent: Intent?) = null
 
     override fun onDestroy() {
-        stopChargingIsland()
+        stopMonitor()
         super.onDestroy()
     }
 
-    private fun stopChargingIsland() {
+    private fun stopMonitor() {
+        monitorRunning = false
         batteryReceiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {} }
         batteryReceiver = null
+        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).cancel(NOTIFICATION_ID)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
     // ============================================================
-    // Build Notification following ntfy's verified LiveUpdate pattern
+    // Battery Polling (like islanders BatteryMonitor)
     // ============================================================
 
-    private fun buildNotification(level: Int, isCharging: Boolean, powerW: Double, tempC: Float): Notification {
-        // Title for fluid cloud capsule
-        val title = if (isCharging && powerW > 0.5) {
-            "⚡ ${String.format("%.0f", powerW)}W · ${level}%"
-        } else if (isCharging) {
-            "⚡ 充电中 · ${level}%"
-        } else {
-            "🔋 ${level}%"
-        }
+    private fun startMonitor() {
+        if (monitorRunning) return
+        monitorRunning = true
 
-        val body = if (isCharging && tempC > 0) {
-            "功率 ${String.format("%.1f", powerW)}W · ${String.format("%.0f", tempC)}°C"
-        } else if (isCharging) {
-            "正在充电"
-        } else {
-            "未充电"
-        }
-
-        val openIntent = PendingIntent.getActivity(this, 0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE)
-
-        val stopIntent = PendingIntent.getService(this, 0,
-            Intent(this, DeviceMonitorService::class.java).apply { action = ACTION_STOP },
-            PendingIntent.FLAG_IMMUTABLE)
-
-        // === ntfy pattern: NotificationCompat.Builder ===
-        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setOngoing(isCharging) // Only ongoing when charging
-            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
-            .setContentIntent(openIntent)
-            .addAction(android.R.drawable.ic_media_pause, "停止", stopIntent)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setProgress(100, level, false) // Battery level as progress
-            .setShowWhen(true)
-            .setWhen(System.currentTimeMillis())
-
-        // === ntfy pattern: applyLiveUpdateSettings ===
-        if (Build.VERSION.SDK_INT >= 35) { // VANILLA_ICE_CREAM
-            applyLiveUpdateSettings(builder, isCharging)
-        }
-
-        return builder.build()
-    }
-
-    /**
-     * Adapted from sy-ntfy-android NotificationService.applyLiveUpdateSettings()
-     */
-    private fun applyLiveUpdateSettings(builder: NotificationCompat.Builder, isCharging: Boolean) {
-        // 1. setLiveUpdateEnabled(true) on Compat builder
-        try {
-            val method = builder.javaClass.getMethod("setLiveUpdateEnabled", Boolean::class.javaPrimitiveType!!)
-            method.invoke(builder, true)
-        } catch (_: Exception) {}
-
-        // Only enable LiveUpdate when charging (has progress = ongoing + category progress)
-        if (!isCharging) return
-
-        // 2. Get framework builder via reflection
-        val frameworkBuilder = try {
-            val compatBuilderClass = Class.forName("androidx.core.app.NotificationCompatBuilder")
-            val getBuilderMethod = compatBuilderClass.getMethod("getBuilder")
-            getBuilderMethod.invoke(builder) as? Notification.Builder
-        } catch (_: Exception) { null }
-
-        if (frameworkBuilder != null) {
-            // 3. requestPromotedOngoing()
-            try {
-                val method = frameworkBuilder.javaClass.getMethod("requestPromotedOngoing")
-                method.invoke(frameworkBuilder)
-            } catch (_: Exception) {
-                try {
-                    val method = builder.javaClass.getMethod("setRequestPromotedOngoing")
-                    method.invoke(builder)
-                } catch (_: Exception) {}
-            }
-
-            // 4. setShortCriticalText(null) — matches Cmd2Gui g.a()
-            try {
-                val method = frameworkBuilder.javaClass.getMethod("setShortCriticalText", CharSequence::class.java)
-                method.invoke(frameworkBuilder, null)
-            } catch (_: Exception) {}
-
-            // 5. ColorOS private: android.requestPromotedOngoing bundle extra
-            try {
-                val extrasMethod = frameworkBuilder.javaClass.getMethod("getExtras")
-                val extras = extrasMethod.invoke(frameworkBuilder) as Bundle
-                extras.putBoolean("android.requestPromotedOngoing", true)
-            } catch (_: Exception) {
-                try {
-                    builder.extras.putBoolean("android.requestPromotedOngoing", true)
-                } catch (_: Exception) {}
-            }
-        }
-    }
-
-    // ============================================================
-    // Battery Monitoring
-    // ============================================================
-
-    private fun startBatteryMonitoring() {
         batteryReceiver = BatteryReceiver()
         registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+
+        val bm = getSystemService(BATTERY_SERVICE) as BatteryManager
+        val poster = LiveUpdatePoster(this)
+
+        val runnable = object : Runnable {
+            override fun run() {
+                if (!monitorRunning) return
+                val lastIntent = batteryReceiver?.lastIntent ?: return
+                val snap = buildSnap(bm, lastIntent)
+                poster.postCharging(snap)
+                handler.postDelayed(this, 3000)
+            }
+        }
+        handler.post(runnable)
     }
 
     inner class BatteryReceiver : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            intent ?: return
-            val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, 0)
-            val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
-            val pct = if (scale > 0) level * 100 / scale else 0
-            val tempDeci = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)
-            val temp = tempDeci / 10f
-            val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, BatteryManager.BATTERY_STATUS_UNKNOWN)
-            val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING
-                    || status == BatteryManager.BATTERY_STATUS_FULL
+        var lastIntent: Intent? = null
+        override fun onReceive(c: Context?, intent: Intent?) { lastIntent = intent }
+    }
 
-            var powerW = 0.0
-            if (isCharging) {
-                try {
-                    val bm = getSystemService(BATTERY_SERVICE) as? BatteryManager
-                    if (bm != null) {
-                        val raw = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
-                        if (raw != Int.MIN_VALUE) {
-                            var ma = raw
-                            if (kotlin.math.abs(ma) > 10000) ma /= 1000
-                            val mv = intent.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0)
-                            powerW = (mv / 1000.0) * kotlin.math.abs(ma) / 1000.0
-                        }
-                    }
-                } catch (_: Exception) {}
+    private fun buildSnap(bm: BatteryManager, intent: Intent): BatterySnapshot {
+        val currentUa = runCatching { bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW) }.getOrDefault(Int.MIN_VALUE)
+        val level = runCatching { bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) }.getOrDefault(0)
+        val voltageMv = intent.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1)
+        val tempDeci = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
+        val plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0)
+        val statusInt = intent.getIntExtra(BatteryManager.EXTRA_STATUS, BatteryManager.BATTERY_STATUS_UNKNOWN)
+        val isCharging = statusInt == BatteryManager.BATTERY_STATUS_CHARGING || statusInt == BatteryManager.BATTERY_STATUS_FULL
+
+        val currentMa = if (currentUa != Int.MIN_VALUE) currentUa / 1000.0 else 0.0
+        val voltageV = if (voltageMv > 0) voltageMv / 1000.0 else 0.0
+        val watts = abs(currentMa / 1000.0) * voltageV
+        val tempC = if (tempDeci != Int.MIN_VALUE) tempDeci / 10.0 else 0.0
+
+        val protocol = when {
+            !isCharging -> "Battery"
+            watts >= 80 -> "SuperVOOC"
+            watts >= 50 -> "VOOC"
+            watts >= 25 -> "FastCharge"
+            watts >= 10 -> "QuickCharge"
+            plugged != 0 -> "Charging"
+            else -> "Battery"
+        }
+
+        return BatterySnapshot(watts, level.coerceIn(0, 100), protocol, currentMa, voltageV, tempC, isCharging)
+    }
+
+    data class BatterySnapshot(
+        val watts: Double, val level: Int, val protocol: String,
+        val currentMa: Double, val voltageV: Double, val tempC: Double,
+        val isCharging: Boolean,
+    )
+}
+
+/**
+ * islanders LiveUpdatePoster port — builds and posts the fluid cloud notification.
+ *
+ * Key implementation details from islanders:
+ *   - Framework Notification.Builder (NOT Compat)
+ *   - setShortCriticalText("6.3W") — NOT null! This is the status chip text!
+ *   - setRequestPromotedOngoing(true) on API 36+
+ *   - ProgressStyle via reflection
+ *   - CATEGORY_STATUS (not CATEGORY_PROGRESS)
+ *   - setOngoing + setOnlyAlertOnce + setShowWhen(false)
+ */
+class LiveUpdatePoster(private val context: Context) {
+    private val nm by lazy { context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager }
+
+    fun postCharging(snap: DeviceMonitorService.BatterySnapshot) {
+        if (!snap.isCharging) {
+            // Don't post if not charging — let it disappear from fluid cloud
+            nm.cancel(DeviceMonitorService.NOTIFICATION_ID)
+            return
+        }
+
+        val short = if (snap.watts >= 0.5) "${"%.1f".format(snap.watts)}W" else "⚡"
+        val title = "${snap.protocol} · ${"%.1f".format(snap.watts)} W"
+        val text  = "${snap.level}%  ·  ${"%.2f".format(snap.currentMa / 1000.0)} A  ·  ${"%.2f".format(snap.voltageV)} V"
+        val tempStr = if (snap.tempC > 0) " · ${"%.0f".format(snap.tempC)}°C" else ""
+        val fullText = text + tempStr
+
+        val pi = PendingIntent.getActivity(context, 0,
+            Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+
+        // Framework Notification.Builder (NOT Compat) — islanders pattern
+        val b = Notification.Builder(context, DeviceMonitorService.CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
+            .setContentTitle(title)
+            .setContentText(fullText)
+            .setContentIntent(pi)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            .setCategory(Notification.CATEGORY_STATUS)
+
+        if (Build.VERSION.SDK_INT >= 36) {
+            // setShortCriticalText — the text on the fluid cloud status chip!
+            runCatching {
+                Notification.Builder::class.java
+                    .getMethod("setShortCriticalText", CharSequence::class.java)
+                    .invoke(b, short)
             }
-
-            // Only update if something changed
-            if (pct != lastLevel || isCharging != lastIsCharging ||
-                kotlin.math.abs(powerW - lastPowerW) > 0.5 ||
-                kotlin.math.abs(temp - lastTempC) > 0.5) {
-                lastLevel = pct
-                lastIsCharging = isCharging
-                lastPowerW = powerW
-                lastTempC = temp
-                val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                nm.notify(NOTIFICATION_ID, buildNotification(pct, isCharging, powerW, temp))
+            // setRequestPromotedOngoing(true) — trigger fluid cloud promotion
+            runCatching {
+                Notification.Builder::class.java
+                    .getMethod("setRequestPromotedOngoing", Boolean::class.javaPrimitiveType)
+                    .invoke(b, true)
+            }
+            // ProgressStyle for battery level bar
+            runCatching {
+                val styleClass = Class.forName("android.app.Notification\$ProgressStyle")
+                val style = styleClass.getConstructor().newInstance()
+                styleClass.getMethod("setProgress", Int::class.javaPrimitiveType).invoke(style, snap.level)
+                styleClass.getMethod("setProgressMax", Int::class.javaPrimitiveType).invoke(style, 100)
+                Notification.Builder::class.java
+                    .getMethod("setStyle", Notification.Style::class.java)
+                    .invoke(b, style as Notification.Style)
             }
         }
+
+        nm.notify(DeviceMonitorService.NOTIFICATION_ID, b.build())
     }
 }

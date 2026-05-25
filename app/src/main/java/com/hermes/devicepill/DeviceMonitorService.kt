@@ -9,44 +9,43 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.graphics.PixelFormat
 import android.os.BatteryManager
 import android.os.Build
+import android.os.Bundle
 import android.os.IBinder
-import android.view.Gravity
-import android.view.WindowManager
-import android.widget.LinearLayout
-import android.widget.TextView
+import androidx.core.app.NotificationCompat
 
 /**
- * Charging Island — 金标充电悬浮窗
+ * ColorOS 16 流体云 — 金标充电显示
  *
- * Based on MaterialYou-Dynamic-Island pattern:
- * - WindowManager overlay near camera cutout
- * - BatteryReceiver for real-time updates
- * - Foreground service to stay alive
+ * Based on sy-ntfy-android's verified LiveUpdate implementation:
+ *   1. NotificationCompat.Builder with setLiveUpdateEnabled(true)
+ *   2. CATEGORY_PROGRESS + setOngoing(true)
+ *   3. Framework builder: requestPromotedOngoing() + setShortCriticalText(null)
+ *   4. android.requestPromotedOngoing bundle extra (ColorOS private API)
+ *   5. Progress bar (battery level 0-100)
  */
 class DeviceMonitorService : Service() {
 
-    private var windowManager: WindowManager? = null
-    private var pillView: LinearLayout? = null
     private var batteryReceiver: BatteryReceiver? = null
+    private var lastLevel = 0
+    private var lastIsCharging = false
+    private var lastPowerW = 0.0
+    private var lastTempC = 0f
 
     companion object {
-        const val CHANNEL_ID = "charging_island_bg"
+        const val CHANNEL_ID = "fluid_cloud_channel"
         const val NOTIFICATION_ID = 2001
         internal const val ACTION_STOP = "com.hermes.devicepill.STOP"
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, DeviceMonitorService::class.java))
         }
-
         fun stop(context: Context) {
             context.startService(Intent(context, DeviceMonitorService::class.java).apply {
                 action = ACTION_STOP
             })
         }
-
         fun isRunning(context: Context): Boolean {
             val am = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
             return am.getRunningServices(Integer.MAX_VALUE)
@@ -56,9 +55,9 @@ class DeviceMonitorService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        val channel = NotificationChannel(CHANNEL_ID, "充电岛后台",
-            NotificationManager.IMPORTANCE_MIN).apply {
-            description = "保持充电岛悬浮窗运行"
+        val channel = NotificationChannel(CHANNEL_ID, "实时状态通知",
+            NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "用于显示流体云动态信息"
             setShowBadge(false)
         }
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
@@ -69,17 +68,8 @@ class DeviceMonitorService : Service() {
             stopChargingIsland()
             return START_NOT_STICKY
         }
-
-        val notif = Notification.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
-            .setContentTitle("充电岛运行中")
-            .setOngoing(true)
-            .build()
-        startForeground(NOTIFICATION_ID, notif)
-
-        createChargingIsland()
+        startForeground(NOTIFICATION_ID, buildNotification(0, false, 0.0, 0f))
         startBatteryMonitoring()
-
         return START_STICKY
     }
 
@@ -90,87 +80,114 @@ class DeviceMonitorService : Service() {
         super.onDestroy()
     }
 
-    // ============================================================
-    // Floating Window
-    // ============================================================
-
-    private fun createChargingIsland() {
-        if (pillView != null) return
-
-        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-
-        pillView = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(10), dp(4), dp(10), dp(4))
-            background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(0xE6000000.toInt())
-                cornerRadius = dp(20).toFloat()
-            }
-            tag = "pill"
-        }
-
-        // Power text (left)
-        pillView!!.addView(TextView(this).apply {
-            id = 1
-            text = ""
-            textSize = 11f
-            setTextColor(0xFFFFFFFF.toInt())
-            setPadding(0, 0, dp(6), 0)
-        })
-
-        // Percent text (right, gold)
-        pillView!!.addView(TextView(this).apply {
-            id = 2
-            text = "0%"
-            textSize = 11f
-            setTextColor(0xFFFFD700.toInt())
-        })
-
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            else WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = dp(10)
-        }
-
-        windowManager?.addView(pillView, params)
-    }
-
-    private fun updatePill(powerW: Double, level: Int, isCharging: Boolean, tempC: Float) {
-        val pill = pillView ?: return
-        val powerTv = pill.findViewById<TextView>(1) ?: return
-        val pctTv = pill.findViewById<TextView>(2) ?: return
-
-        if (isCharging && powerW > 0.5) {
-            powerTv.text = "⚡ ${String.format("%.0f", powerW)}W"
-        } else if (isCharging) {
-            powerTv.text = "⚡"
-        } else {
-            powerTv.text = ""
-        }
-
-        val tempStr = if (tempC > 0 && isCharging) " ${String.format("%.0f", tempC)}°" else ""
-        pctTv.text = "${level}%$tempStr"
-    }
-
     private fun stopChargingIsland() {
-        pillView?.let { try { windowManager?.removeView(it) } catch (_: Exception) {} }
-        pillView = null
-        windowManager = null
         batteryReceiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {} }
         batteryReceiver = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    // ============================================================
+    // Build Notification following ntfy's verified LiveUpdate pattern
+    // ============================================================
+
+    private fun buildNotification(level: Int, isCharging: Boolean, powerW: Double, tempC: Float): Notification {
+        // Title for fluid cloud capsule
+        val title = if (isCharging && powerW > 0.5) {
+            "⚡ ${String.format("%.0f", powerW)}W · ${level}%"
+        } else if (isCharging) {
+            "⚡ 充电中 · ${level}%"
+        } else {
+            "🔋 ${level}%"
+        }
+
+        val body = if (isCharging && tempC > 0) {
+            "功率 ${String.format("%.1f", powerW)}W · ${String.format("%.0f", tempC)}°C"
+        } else if (isCharging) {
+            "正在充电"
+        } else {
+            "未充电"
+        }
+
+        val openIntent = PendingIntent.getActivity(this, 0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE)
+
+        val stopIntent = PendingIntent.getService(this, 0,
+            Intent(this, DeviceMonitorService::class.java).apply { action = ACTION_STOP },
+            PendingIntent.FLAG_IMMUTABLE)
+
+        // === ntfy pattern: NotificationCompat.Builder ===
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setOngoing(isCharging) // Only ongoing when charging
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setContentIntent(openIntent)
+            .addAction(android.R.drawable.ic_media_pause, "停止", stopIntent)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setProgress(100, level, false) // Battery level as progress
+            .setShowWhen(true)
+            .setWhen(System.currentTimeMillis())
+
+        // === ntfy pattern: applyLiveUpdateSettings ===
+        if (Build.VERSION.SDK_INT >= 35) { // VANILLA_ICE_CREAM
+            applyLiveUpdateSettings(builder, isCharging)
+        }
+
+        return builder.build()
+    }
+
+    /**
+     * Adapted from sy-ntfy-android NotificationService.applyLiveUpdateSettings()
+     */
+    private fun applyLiveUpdateSettings(builder: NotificationCompat.Builder, isCharging: Boolean) {
+        // 1. setLiveUpdateEnabled(true) on Compat builder
+        try {
+            val method = builder.javaClass.getMethod("setLiveUpdateEnabled", Boolean::class.javaPrimitiveType!!)
+            method.invoke(builder, true)
+        } catch (_: Exception) {}
+
+        // Only enable LiveUpdate when charging (has progress = ongoing + category progress)
+        if (!isCharging) return
+
+        // 2. Get framework builder via reflection
+        val frameworkBuilder = try {
+            val compatBuilderClass = Class.forName("androidx.core.app.NotificationCompatBuilder")
+            val getBuilderMethod = compatBuilderClass.getMethod("getBuilder")
+            getBuilderMethod.invoke(builder) as? Notification.Builder
+        } catch (_: Exception) { null }
+
+        if (frameworkBuilder != null) {
+            // 3. requestPromotedOngoing()
+            try {
+                val method = frameworkBuilder.javaClass.getMethod("requestPromotedOngoing")
+                method.invoke(frameworkBuilder)
+            } catch (_: Exception) {
+                try {
+                    val method = builder.javaClass.getMethod("setRequestPromotedOngoing")
+                    method.invoke(builder)
+                } catch (_: Exception) {}
+            }
+
+            // 4. setShortCriticalText(null) — matches Cmd2Gui g.a()
+            try {
+                val method = frameworkBuilder.javaClass.getMethod("setShortCriticalText", CharSequence::class.java)
+                method.invoke(frameworkBuilder, null)
+            } catch (_: Exception) {}
+
+            // 5. ColorOS private: android.requestPromotedOngoing bundle extra
+            try {
+                val extrasMethod = frameworkBuilder.javaClass.getMethod("getExtras")
+                val extras = extrasMethod.invoke(frameworkBuilder) as Bundle
+                extras.putBoolean("android.requestPromotedOngoing", true)
+            } catch (_: Exception) {
+                try {
+                    builder.extras.putBoolean("android.requestPromotedOngoing", true)
+                } catch (_: Exception) {}
+            }
+        }
     }
 
     // ============================================================
@@ -210,15 +227,17 @@ class DeviceMonitorService : Service() {
                 } catch (_: Exception) {}
             }
 
-            // Hide pill if not charging and battery is above 95%
-            if (!isCharging) {
-                pillView?.visibility = android.view.View.GONE
-            } else {
-                pillView?.visibility = android.view.View.VISIBLE
-                updatePill(powerW, pct, true, temp)
+            // Only update if something changed
+            if (pct != lastLevel || isCharging != lastIsCharging ||
+                kotlin.math.abs(powerW - lastPowerW) > 0.5 ||
+                kotlin.math.abs(temp - lastTempC) > 0.5) {
+                lastLevel = pct
+                lastIsCharging = isCharging
+                lastPowerW = powerW
+                lastTempC = temp
+                val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                nm.notify(NOTIFICATION_ID, buildNotification(pct, isCharging, powerW, temp))
             }
         }
     }
-
-    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 }

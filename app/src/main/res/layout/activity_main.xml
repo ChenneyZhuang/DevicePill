@@ -10,7 +10,7 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="⚡ 金标充电岛"
+        android:text="⚡ 充电岛"
         android:textSize="28sp"
         android:textColor="#FFE6EDF3"
         android:textStyle="bold"
@@ -19,30 +19,29 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Charging Island · 悬浮窗充电显示"
+        android:text="ColorOS 16 流体云 · 金标充电"
         android:textSize="12sp"
         android:textColor="#FF8B949E"
         android:layout_marginTop="4dp"
-        android:layout_marginBottom="24dp" />
-
-    <!-- Overlay permission -->
-    <Button
-        android:id="@+id/overlay_btn"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="⚡ 授权悬浮窗 (必要!)"
-        android:textColor="#FFFFFFFF"
-        android:backgroundTint="#FFFF6B35"
         android:layout_marginBottom="8dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="基于 Android 16 Live Updates API\n充电时自动显示在流体云胶囊中"
+        android:textSize="11sp"
+        android:textColor="#FF8B949E"
+        android:gravity="center"
+        android:layout_marginBottom="24dp" />
 
     <!-- Notification permission -->
     <Button
         android:id="@+id/notif_btn"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="🔔 授权通知"
+        android:text="🔔 授权通知权限"
         android:textColor="#FFFFFFFF"
-        android:backgroundTint="#FFD29922"
+        android:backgroundTint="#FFFF6B35"
         android:visibility="gone"
         android:layout_marginBottom="16dp" />
 
@@ -54,6 +53,7 @@
         android:text="○ 已停止"
         android:textSize="16sp"
         android:textColor="#FF8B949E"
+        android:gravity="center"
         android:layout_marginBottom="16dp" />
 
     <!-- Toggle -->
@@ -61,7 +61,7 @@
         android:id="@+id/toggle_btn"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="▶ 启动充电岛"
+        android:text="▶ 启动"
         android:textColor="#FFFFFFFF"
         android:backgroundTint="#FF3FB950"
         android:enabled="false" />
@@ -69,7 +69,7 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="启动后插上充电器，摄像头旁显示充电信息"
+        android:text="启动后插上充电器 → 流体云自动显示"
         android:textSize="11sp"
         android:textColor="#FF8B949E"
         android:layout_marginTop="8dp" />
@@ -77,7 +77,7 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Charging Island v4.1"
+        android:text="Charging Island v5.0"
         android:textSize="10sp"
         android:textColor="#338B949E"
         android:layout_marginTop="64dp" />

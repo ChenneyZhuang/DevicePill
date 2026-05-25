@@ -1,87 +1,121 @@
-# DevicePill（设备岛）
+# 充电·岛（DevicePill）
 
-ColorOS 16 手机硬件性能检测 + 流体云/锁屏岛实时监控。
+ColorOS 16 充电流体云 · 金标充电显示
 
-**无需 root**，全部数据通过系统 API 读取。
+**无需 root**，专为 OPPO Find X9 Ultra 等 ColorOS 16 设备优化。
+
+---
 
 ## 功能
 
-### 硬件信息检测
-- **CPU**：型号、核心数、最高频率、当前频率、使用率、温度、调度器
-- **GPU**：渲染器、厂商、OpenGL ES 版本、温度
-- **内存**：总量、已用、可用、百分比
-- **存储**：内部存储 + SD 卡容量
-- **电池**：电量、电压、电流、功率、温度、健康、充电方式、容量
-- **屏幕**：分辨率、刷新率、DPI、HDR 支持
-- **系统**：设备型号、Android 版本、ColorOS 版本、内核
-- **网络**：Wi-Fi SSID、信号强度、IP
+- ⚡ **充电实时监控**：功率（W）、电压、电流、温度
+- 🔋 **电量环动画**：金色渐变圆环，实时显示电量百分比
+- 🏝️ **流体云胶囊**：充电时在摄像头旁显示 `⚡ 8.0W · 92% · 32°C`
+- 🏝️ **锁屏岛**：展开显示完整充电参数
+- 🔔 **常亮显示**：锁屏常驻，随时查看
+- 🚀 **开机自启**：重启自动恢复监控
 
-### 流体云 & 锁屏岛（ColorOS 16）
-启动监控后，通知自动出现在：
-- **流体云胶囊**：充电时显示 `⚡ 8.0W · 92% · 32°C`
-- **锁屏岛**：展开显示完整参数（功率/电压/电流/温度/容量）
-- **常亮显示**：锁屏常驻
-
-ColorOS 16 的流体云兼容 Android 16 Live Updates API，无需 OPPO 私有 SDK。
-
-### 开机自启
-停止前如果监控在运行，重启后自动恢复。
+---
 
 ## 安装
 
-### 方法一：直接装 APK
+### 直接装 APK
 
-1. 从 [Releases](../../releases) 下载 `app-debug.apk`
-2. 手机打开 APK → 允许「未知来源」安装
-3. 启动 App → 授权**通知权限**（必须，否则流体云不显示）
-4. 点「启动监控」即可
+从 [Releases](../../releases) 下载最新 `app-debug.apk` → 安装 → 按下方设置指南操作。
 
-### 方法二：自己编译
+### 自己编译
 
 ```bash
-# 需要 JDK 17 + Android SDK
 git clone https://github.com/ChenneyZhuang/DevicePill.git
 cd DevicePill
 echo "sdk.dir=/path/to/Android/sdk" > local.properties
 ./gradlew assembleDebug
-# APK 在 app/build/outputs/apk/debug/app-debug.apk
+# APK: app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## 权限说明
+---
+
+## ⚠️ 设置指南（必须！）
+
+安装后**不会自动生效**，需要完成以下 4 步：
+
+### 1. 授权通知权限
+首次打开 App 会弹窗，点击「允许」。  
+如果错过了，App 内红色卡片会提示，点击即可重新授权。
+
+### 2. 开启流体云显示 ⭐ **最关键**
+这是让充电信息出现在摄像头旁「金标胶囊」的关键设置！
+
+**路径：**
+```
+设置 → 通知与状态栏 → 流体云 → 找到「DevicePill」→ 打开
+```
+
+不同 ColorOS 版本可能的路径：
+- `设置 → 通知与状态栏 → 更多设置 → 流体云`
+- `设置 → 特色功能 → 流体云`
+
+### 3. 允许锁屏显示
+```
+设置 → 通知与状态栏 → App 通知管理 → DevicePill → 锁屏通知 → 显示所有通知
+```
+
+### 4. 启动并验证
+回到 App → 点击「启动流体云」→ 插上充电器 → 摄像头旁应出现金标充电胶囊！
+
+---
+
+## 需要的权限
 
 | 权限 | 用途 |
 |------|------|
-| 通知 | 流体云/锁屏岛显示实时数据 |
-| 开机自启 | 重启自动恢复监控 |
-| 网络状态 | 读取 Wi-Fi SSID |
+| 通知 | 流体云/锁屏岛显示实时充电数据 |
+| 开机自启 | 重启后自动恢复监控 |
 
-不需要 root，不需要 BATTERY_STATS，不需要悬浮窗。
+不需要 root，不需要 BATTERY_STATS，不需要悬浮窗、无障碍。
+
+---
+
+## 设备支持
+
+- **最佳**：ColorOS 16（OPPO Find X9 Ultra / X8 Pro / Reno 系列）
+- **兼容**：Android 12+ 均可运行（流体云为 ColorOS 独占）
+- **其他品牌**：通知栏会显示充电数据，但无流体云胶囊效果
+
+---
+
+## 常见问题
+
+**Q: 启动后没看到流体云胶囊？**
+A: 确保已完成设置指南第 2 步——在系统设置里打开 DevicePill 的流体云开关。
+
+**Q: 锁屏上没显示？**
+A: 去 `设置 → 通知 → DevicePill → 锁屏通知 → 显示所有通知`。
+
+**Q: 功率显示 0W？**
+A: 部分设备/充电器组合下，系统 API 不返回电流值，属正常现象。电压和温度仍可正常显示。
+
+**Q: 流体云不更新？**
+A: ColorOS 后台管理可能限制了 App。去 `设置 → 应用 → DevicePill → 电池 → 不限制`。
+
+---
 
 ## 技术架构
 
 ```
 DevicePill/
-├── info/                      # 8 个信息模块
-│   ├── CpuInfo.kt            → /proc/cpuinfo + /proc/stat + /sys/class/thermal
-│   ├── BatteryInfo.kt        → BatteryManager
-│   ├── MemoryInfo.kt         → ActivityManager
-│   ├── StorageInfo.kt        → StatFs
-│   ├── GpuInfo.kt           → EGL14 + GLES20
-│   ├── DisplayInfo.kt       → WindowManager
-│   ├── SystemInfo.kt        → SystemProperties 反射
-│   ├── NetworkInfo.kt       → ConnectivityManager
-│   └── DeviceInfo.kt        → 聚合器
-├── DeviceMonitorService.kt   → 前台通知（流体云/锁屏岛）
-├── BootReceiver.kt           → 开机自启
-└── MainActivity.kt           → Compose 仪表盘
+├── MainActivity.kt           → Compose UI（电池环 + 实时数据）
+├── DeviceMonitorService.kt   → 前台服务（流体云通知）
+│   ├── battery_monitor 通道   → IMPORTANCE_LOW（金标胶囊）
+│   └── battery_live_update_v2 → IMPORTANCE_DEFAULT（灵动岛）
+└── BootReceiver.kt           → 开机自启
 ```
 
-## 设备支持
-
-- **系统**：Android 12+（SDK 31+）
-- **最佳体验**：ColorOS 16（OPPO Find X9 Ultra / X8 / Reno 系列）
-- **其他**：任何 Android 12+ 设备均可运行，但流体云为 ColorOS 独占
+**流体云原理**（LLMonitor 验证）：
+- 双通知通道 + `android.requestPromotedOngoing` extras
+- Android 16+ `ProgressStyle` 显示电量进度
+- 无需 OPPO 私有 SDK
 
 ---
 
-**Inspired by ColorOS 16 Charging Island · 金标充电显示**
+**Inspired by ColorOS 16 金标充电 · LLMonitor**

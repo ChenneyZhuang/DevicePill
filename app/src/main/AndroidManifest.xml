@@ -13,7 +13,7 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.DevicePill"
+        android:theme="@style/Theme.FluidPill"
         tools:targetApi="36">
 
         <activity

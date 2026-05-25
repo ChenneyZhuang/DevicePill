@@ -42,6 +42,9 @@ class DeviceMonitorService : Service() {
         internal const val ACTION_STOP = "com.hermes.devicepill.STOP"
         private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
 
+        @Volatile private var _running = false
+        fun isRunning(): Boolean = _running
+
         fun start(context: Context) {
             context.startForegroundService(Intent(context, DeviceMonitorService::class.java))
         }
@@ -49,11 +52,6 @@ class DeviceMonitorService : Service() {
             context.startService(Intent(context, DeviceMonitorService::class.java).apply {
                 action = ACTION_STOP
             })
-        }
-        fun isRunning(context: Context): Boolean {
-            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-            return am.getRunningServices(Integer.MAX_VALUE)
-                .any { it.service.className == DeviceMonitorService::class.java.name }
         }
     }
 
@@ -89,9 +87,11 @@ class DeviceMonitorService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            _running = false
             stopMonitor()
             return START_NOT_STICKY
         }
+        _running = true
         startForeground(NOTIFICATION_ID, buildNotification(null))
         startMonitor()
         return START_STICKY
@@ -104,6 +104,7 @@ class DeviceMonitorService : Service() {
     }
 
     private fun stopMonitor() {
+        _running = false
         monitorRunning = false
         batteryReceiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {} }
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -143,6 +144,7 @@ class DeviceMonitorService : Service() {
             if (raw != Int.MIN_VALUE) {
                 var ma = raw
                 if (abs(ma) > 10000) ma /= 1000
+                ma = if (isCharging) abs(ma) else -abs(ma)
                 currentMa = ma
                 watts = (mv / 1000.0) * ma / 1000.0
             }
@@ -157,9 +159,7 @@ class DeviceMonitorService : Service() {
         parts.add("${"%.1f".format(tempC)}℃")
         val text = parts.joinToString(" · ")
 
-        val title = if (isCharging && watts >= 0.5) "${"%.0f".format(watts)}W"
-                   else if (isCharging) "充电中"
-                   else "${"%.1f".format(tempC)}℃"
+        val title = if (isCharging) "${"%.0f".format(watts)}W" else "${"%.1f".format(tempC)}℃"
         val subText = if (isCharging) "充电中" else "未充电"
 
         // LLMonitor pattern: Framework Notification.Builder with CHANNEL_ID

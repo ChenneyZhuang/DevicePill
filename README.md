@@ -1,35 +1,26 @@
-# 充电·岛（DevicePill）
+# 流体云胶囊（FluidPill）
 
-*ColorOS 16 Charging Fluid Cloud · Gold Badge Charging Display*
+*ColorOS 16 Fluid Cloud · Gold Badge Charging Capsule*
 
-专为 OPPO Find X9 Ultra 等 ColorOS 16 设备优化的充电流体云应用，**无需 root**。
+专为 OPPO Find X9 Ultra 等 ColorOS 16 设备优化的充电流体云应用，**无需 root**。充电时摄像头旁自动显示金标胶囊，实时展示功率、电压、电流、温度。
 
-*Optimized for ColorOS 16 devices (OPPO Find X9 Ultra, etc.). No root required.*
+*Optimized for ColorOS 16 devices. No root. Golden pill appears when charging, showing real-time power, voltage, current, and temperature.*
 
 ---
 
 ## 功能 / Features
 
-- ⚡ **充电监控**：功率 (W)、电压、电流、温度、健康度、电池技术
+- 🏝️ **流体云胶囊**：充电时摄像头旁金标胶囊（ColorOS 16 原生流体云）
 - 🔋 **Active Ring**：4 色渐变圆环（动感/极紫/海洋/日落 四主题）
-- 📈 **功率曲线**：60 秒历史折线图
-- 🌡️ **温度曲线**：60 秒温度趋势
-- 🏝️ **流体云胶囊**：充电时摄像头旁金标胶囊显示实时数据
-- 🏝️ **锁屏岛**：展开显示完整参数
-- 🚀 **开机自启**
-
-> ⚡ **Charging Monitor**: Power (W), voltage, current, temperature, health, battery tech
-> 🔋 **Active Ring**: 4-theme sweep gradient battery gauge
-> 📈 **Power Curve**: 60-second line chart
-> 🌡️ **Temperature Curve**: 60-second trend
-> 🏝️ **Fluid Cloud Capsule**: Real-time data in ColorOS golden pill
-> 🏝️ **Lock Screen Island**: Expanded charging details
+- 📈 **实时曲线**：功率 + 温度 + 电压（60 点 × 3 秒 = 3 分钟窗口，含 Y 轴刻度）
+- ⚡ **双卡监控**：功率+电流、电压+温度、供电+健康
+- 🔓 **安装即用**：授权通知权限后自动启动，无需手动操作
 
 ---
 
 ## 安装 / Install
 
-从 [Releases](../../releases) 下载最新 APK → 安装。
+从 [Releases](../../releases) 下载最新 APK 安装。
 
 *Download the latest APK from [Releases](../../releases).*
 
@@ -37,66 +28,59 @@
 
 ## 设置指南 / Setup Guide
 
-> ⚠️ 安装后需手动完成以下步骤，否则流体云不显示。
-> *Manual steps required after install — fluid cloud won't show otherwise.*
+> ⚠️ 安装后需完成以下步骤，否则流体云不显示。
 
 ### 1. 授权通知 / Notification Permission
-首次打开 App 弹窗点「允许」。*Grant permission when prompted.*
+打开 App → 点击红色卡片授权。*Tap the red card to grant.*
 
 ### 2. 开启流体云 / Enable Fluid Cloud ⭐
 ```
-设置 → 通知与状态栏 → 流体云 → DevicePill → 打开
-Settings → Notifications → Fluid Cloud → DevicePill → ON
+设置 → 通知与状态栏 → 流体云 → FluidPill → 打开
+Settings → Notifications → Fluid Cloud → FluidPill → ON
 ```
 
 ### 3. 锁屏显示 / Lock Screen
 ```
-设置 → 通知与状态栏 → DevicePill → 锁屏通知 → 显示
-Settings → Notifications → DevicePill → Lock screen → Show
+设置 → 通知 → FluidPill → 锁屏通知 → 显示
+Settings → Notifications → FluidPill → Lock screen → Show
 ```
 
-### 4. 启动 / Start
-点击「启动流体云」→ 插充电器 → 摄像头旁出现金标胶囊。
-*Tap "Start" → plug in charger → golden pill appears.*
+授权后 App 自动启动流体云，插充电器即可看到金标胶囊。
 
 ---
 
 ## 主题 / Themes
 
-| 主题 Theme | 环形渐变 Ring Gradient |
-|-----------|----------------------|
-| 动感 Dynamic | 青 → 橙 → 黄 → 绿 Cyan → Orange → Yellow → Green |
-| 极紫 JIZI | 浅紫 → 紫 → 紫罗兰 → 靛蓝 Lilac → Purple → Violet → Indigo |
-| 海洋 Ocean | 浅蓝 → 中蓝 → 深蓝 → 天蓝 Light → Medium → Deep → Sky Blue |
-| 日落 Sunset | 金橙 → 橙 → 深橙 → 红橙 Gold → Orange → Deep → Red Orange |
+| 主题 | 渐变 |
+|------|------|
+| 动感 Dynamic | 青 → 橙 → 黄 → 绿 |
+| 极紫 JIZI | 浅紫 → 紫 → 紫罗兰 → 靛蓝 |
+| 海洋 Ocean | 浅蓝 → 中蓝 → 深蓝 → 天蓝 |
+| 日落 Sunset | 金橙 → 橙 → 深橙 → 红橙 |
 
 ---
 
 ## FAQ
 
-**Q: 没看到流体云胶囊？ / No fluid cloud pill?**
-A: 系统设置 → 通知与状态栏 → 流体云 → 打开 DevicePill
-*Settings → Notifications → Fluid Cloud → Enable DevicePill*
+**Q: 没看到流体云胶囊？**
+A: 系统设置 → 通知与状态栏 → 流体云 → 打开 FluidPill
 
-**Q: 锁屏不显示？ / Not showing on lock screen?**
-A: 设置 → 通知 → DevicePill → 锁屏通知 → 显示所有
-*Settings → Notifications → DevicePill → Lock screen → Show all*
+**Q: 锁屏不显示？**
+A: 设置 → 通知 → FluidPill → 锁屏通知 → 显示所有
 
-**Q: 功率 0W？ / Power shows 0W?**
-A: 部分设备/充电器不返回电流值。*Some devices/chargers don't report current.*
+**Q: 功率 0W？**
+A: 部分设备/充电器不返回电流值
 
-**Q: 后台被杀？ / Killed in background?**
-A: 设置 → 应用 → DevicePill → 电池 → 不限制
-*Settings → Apps → DevicePill → Battery → Unrestricted*
+**Q: 后台被杀？**
+A: 设置 → 应用 → FluidPill → 电池 → 不限制
 
 ---
 
 ## 参考 / Credits
 
-- **[LLMonitor](https://github.com/lele/llmonitor)** — 流体云技术方案（双通道 + `ProgressStyle` + `android.requestPromotedOngoing`）参考自 LLMonitor 的实现；配色及卡片设计规格亦学习自该项目。*Fluid cloud technique, color palettes, and card design specs referenced from LLMonitor.*
+- **[LLMonitor](https://github.com/lele/llmonitor)** — 流体云技术方案（双通道 + ProgressStyle + android.requestPromotedOngoing）
 - **[Android Compose Samples](https://github.com/android/compose-samples)** — Material 3 设计参考
-- **[Now in Android](https://github.com/android/nowinandroid)** — Compose 最佳实践
 
 ---
 
-*Inspired by ColorOS 16 金标充电 · LLMonitor*
+*Fluid Cloud Capsule for ColorOS 16 · Inspired by LLMonitor*

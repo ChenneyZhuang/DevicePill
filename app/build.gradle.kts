@@ -13,11 +13,21 @@ android {
         minSdk = 31
         targetSdk = 36
         versionCode = 1
-        versionName = "2.0.0"
+        versionName = "2.1.6"
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file("/tmp/devicepill.jks")
+            storePassword = "android"
+            keyAlias = "devicepill"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
@@ -31,11 +41,11 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
 
-    // Rename APK with version number: DevicePill-v2.0.0.apk
+    // Rename APK with version number: FluidPill-v2.0.0.apk
     applicationVariants.all {
         outputs.all {
             (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName =
-                "DevicePill-v${defaultConfig.versionName}.apk"
+                "FluidPill-v${defaultConfig.versionName}.apk"
         }
     }
 }

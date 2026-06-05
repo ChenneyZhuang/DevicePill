@@ -1,17 +1,17 @@
-# 流体云胶囊（FluidPill）
+# 🏝️ 流体云胶囊（FluidPill）v2.1.8
 
 *ColorOS 16 Fluid Cloud · Gold Badge Charging Capsule*
 
 专为 OPPO Find X9 Ultra 等 ColorOS 16 设备优化的充电流体云应用，**无需 root**。充电时摄像头旁自动显示金标胶囊，实时展示功率、电压、电流、温度。
 
-*Optimized for ColorOS 16 devices. No root. Golden pill appears when charging, showing real-time power, voltage, current, and temperature.*
+*Optimized for ColorOS 16 devices. No root required. Golden pill appears when charging, showing real-time power, voltage, current, and temperature.*
 
 ---
 
 ## 功能 / Features
 
-- 🏝️ **流体云胶囊**：充电时摄像头旁金标胶囊（ColorOS 16 原生流体云）
-- 🔋 **Active Ring**：4 色渐变圆环（动感/极紫/海洋/日落 四主题）
+- 🏝️ **流体云胶囊**：充电时摄像头旁金标胶囊（ColorOS 16 原生流体云 API）
+- 🔋 **Active Ring**：4 色渐变圆环（动感 / 极紫 / 海洋 / 日落 四主题）
 - 📈 **实时曲线**：功率 + 温度 + 电压（60 点 × 3 秒 = 3 分钟窗口，含 Y 轴刻度）
 - ⚡ **双卡监控**：功率+电流、电压+温度、供电+健康
 - 🔓 **安装即用**：授权通知权限后自动启动，无需手动操作
@@ -60,6 +60,26 @@ Settings → Notifications → FluidPill → Lock screen → Show
 
 ---
 
+## 更新日志 / Changelog
+
+### v2.1.8
+- 优化充电流体云显示稳定性
+
+### v2.1.6
+- 修复流体云 4 个 Bug
+
+### v2.1.1
+- 修复流体云 4 个 Bug
+
+### v2.1.0
+- LLMonitor parity：始终显示 V/A，完整通知，网格曲线
+
+### v2.0.0
+- 重命名：DevicePill → FluidPill（流体云胶囊）
+- 金标胶囊流体云方案
+
+---
+
 ## FAQ
 
 **Q: 没看到流体云胶囊？**
@@ -76,10 +96,21 @@ A: 设置 → 应用 → FluidPill → 电池 → 不限制
 
 ---
 
+## 技术栈 / Tech Stack
+
+- **语言**: Kotlin
+- **UI**: Jetpack Compose + Material 3
+- **流体云**: ColorOS 16 Fluid Cloud API（ProgressStyle + PromotedOngoing）
+- **最低 SDK**: Android 12 (API 31)
+- **目标 SDK**: Android 16 (API 36)
+
+---
+
 ## 参考 / Credits
 
 - **[LLMonitor](https://github.com/lele/llmonitor)** — 流体云技术方案（双通道 + ProgressStyle + android.requestPromotedOngoing）
 - **[Android Compose Samples](https://github.com/android/compose-samples)** — Material 3 设计参考
+- **[OPPO 流体云开发者文档](https://open.oppomobile.com)** — ColorOS Fluid Cloud 官方 API
 
 ---
 

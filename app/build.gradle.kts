@@ -39,7 +39,7 @@ android {
     }
 
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
 
     // Rename APK with version number: FluidPill-v2.0.0.apk
     applicationVariants.all {

@@ -5,7 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -20,27 +19,30 @@ import kotlin.math.abs
 /**
  * ColorOS 16 流体云 — 技术方案参考自 LLMonitor
  *
- * Key technique (verified working on ColorOS 16):
- *   1. Framework Notification.Builder (NOT Compat)
- *   2. CHANNEL importance LOW (=2), progress channel DEFAULT (=3)
- *   3. API 36+: Notification.ProgressStyle with battery level progress
- *   4. android.requestPromotedOngoing extras bundle — THE KEY!
- *   5. setOngoing(true) + setOnlyAlertOnce(true)
- *   6. NO setShortCriticalText, NO setRequestPromotedOngoing
+ * Features:
+ *   - Fluid Cloud golden pill (ColorOS 16 native)
+ *   - Real-time W / V / A / °C in notification
+ *   - High-temperature alert (>42°C)
+ *   - Charge complete alert (100%)
  */
 class DeviceMonitorService : Service() {
 
     private var monitorRunning = false
     private val handler = Handler(Looper.getMainLooper())
-    private var batteryReceiver: BatteryReceiver? = null
-    private var prevCharging: Boolean? = null  // track charging state for fluid cloud transitions
+    private var prevCharging: Boolean? = null
+    // One-shot alert flags — fire once, reset on state change
+    private var tempWarned = false
+    private var fullCharged = false
 
     companion object {
         const val CHANNEL_ID = "battery_monitor"
-        const val LIVE_CHANNEL_ID = "battery_live_update_v2"
+        const val ALERT_CHANNEL_ID = "battery_alerts"
         const val NOTIFICATION_ID = 1
+        const val ALERT_NOTIFICATION_ID = 2
         internal const val ACTION_STOP = "com.hermes.devicepill.STOP"
         private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
+        private const val PREFS_NAME = "device_pill_prefs"
+        private const val PREF_MONITOR_RUNNING = "monitor_was_running"
 
         @Volatile private var _running = false
         fun isRunning(): Boolean = _running
@@ -57,32 +59,22 @@ class DeviceMonitorService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
+        createNotificationChannels()
     }
 
-    // LLMonitor pattern: two channels
-    private fun createNotificationChannel() {
+    private fun createNotificationChannels() {
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        // Main channel (IMPORTANCE_LOW = 2, like LLMonitor)
-        val mainChannel = NotificationChannel(CHANNEL_ID, "电池监控", 2).apply {
+        val mainChannel = NotificationChannel(CHANNEL_ID, "电池监控", NotificationManager.IMPORTANCE_LOW).apply {
             description = "显示实时充电功率"
-            setShowBadge(false)
-            enableVibration(false)
-            enableLights(false)
-            setSound(null, null)
-            lockscreenVisibility = 1
+            setShowBadge(false); enableVibration(false); enableLights(false)
+            setSound(null, null); lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         }
-        // Live update channel (IMPORTANCE_DEFAULT = 3)
-        val liveChannel = NotificationChannel(LIVE_CHANNEL_ID, "实时活动 (灵动岛)", 3).apply {
-            description = "充电时显示灵动岛风格通知"
-            setShowBadge(false)
-            enableVibration(false)
-            enableLights(false)
-            setSound(null, null)
-            lockscreenVisibility = 1
+        val alertChannel = NotificationChannel(ALERT_CHANNEL_ID, "电池提醒", NotificationManager.IMPORTANCE_HIGH).apply {
+            description = "温度过高、充电完成等提醒"
+            setShowBadge(true); enableVibration(true)
         }
         nm.createNotificationChannel(mainChannel)
-        nm.createNotificationChannel(liveChannel)
+        nm.createNotificationChannel(alertChannel)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -92,12 +84,17 @@ class DeviceMonitorService : Service() {
             return START_NOT_STICKY
         }
         _running = true
+        // Reset one-shot alert flags on fresh start
+        tempWarned = false; fullCharged = false
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(PREF_MONITOR_RUNNING, true).apply()
         startForeground(NOTIFICATION_ID, buildNotification(null))
         startMonitor()
         return START_STICKY
     }
 
     override fun onBind(intent: Intent?) = null
+
     override fun onDestroy() {
         stopMonitor()
         super.onDestroy()
@@ -106,22 +103,25 @@ class DeviceMonitorService : Service() {
     private fun stopMonitor() {
         _running = false
         monitorRunning = false
-        batteryReceiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {} }
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(PREF_MONITOR_RUNNING, false).apply()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
     // ============================================================
-    // LLMonitor pattern: createInitialNotification
+    // Build notification — readable current display (2.8A not 2800mA)
     // ============================================================
 
     @android.annotation.SuppressLint("NewApi")
-    private fun buildNotification(pluggedOverride: Int?): Notification {
-        val intent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+    private fun buildNotification(batteryIntent: Intent?): Notification {
+        val intent = batteryIntent
+            ?: registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+
         val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, 0) ?: 0
         val scale = intent?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
         val pct = if (scale > 0) level * 100 / scale else 0
-        val plugged = pluggedOverride ?: intent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
+        val plugged = intent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
         val tempDeci = intent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0
         val tempC = tempDeci / 10f
         val mv = intent?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0) ?: 0
@@ -129,18 +129,19 @@ class DeviceMonitorService : Service() {
 
         val isCharging = plugged != 0
         val chargeType = when (plugged) {
-            BatteryManager.BATTERY_PLUGGED_AC -> "超级闪充"
-            BatteryManager.BATTERY_PLUGGED_USB -> "USB 充电"
-            BatteryManager.BATTERY_PLUGGED_WIRELESS -> "无线充电"
+            BatteryManager.BATTERY_PLUGGED_AC -> "⚡超级闪充"
+            BatteryManager.BATTERY_PLUGGED_USB -> "🔌USB充电"
+            BatteryManager.BATTERY_PLUGGED_WIRELESS -> "🛜无线充电"
             else -> if (isCharging) "充电中" else ""
         }
 
-        // Get power watts + current (LLMonitor: reads even when not charging)
         var watts = 0.0
         var currentMa = 0
         val bm = getSystemService(BATTERY_SERVICE) as? BatteryManager
         if (bm != null) {
-            val raw = runCatching { bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW) }.getOrDefault(Int.MIN_VALUE)
+            val raw = runCatching {
+                bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+            }.getOrDefault(Int.MIN_VALUE)
             if (raw != Int.MIN_VALUE) {
                 var ma = raw
                 if (abs(ma) > 10000) ma /= 1000
@@ -150,19 +151,27 @@ class DeviceMonitorService : Service() {
             }
         }
 
-        // ── LLMonitor-style notification: full data content ──
+        // Format current: 2800mA → 2.8A for readability
+        val currentStr = when {
+            currentMa == 0 -> null
+            abs(currentMa) >= 1000 -> "${"%.1f".format(abs(currentMa) / 1000f)}A"
+            else -> "${abs(currentMa)}mA"
+        }
+
+        // Compact notification text: 92% · 67W · 4.2V · 2.8A · 38°C
         val parts = mutableListOf<String>()
         parts.add("$pct%")
-        if (isCharging && chargeType.isNotEmpty()) parts.add(chargeType)
+        val wattInt = watts.toInt()
+        if (isCharging && wattInt > 0) parts.add("${wattInt}W")
+        if (chargeType.isNotEmpty() && isCharging) parts.add(chargeType)
         parts.add("${"%.1f".format(voltageV)}V")
-        if (currentMa != 0) parts.add("${currentMa}mA")
-        parts.add("${"%.1f".format(tempC)}℃")
+        if (currentStr != null) parts.add(currentStr)
+        parts.add("${"%.1f".format(tempC)}°C")
         val text = parts.joinToString(" · ")
 
-        val title = if (isCharging) "${"%.0f".format(watts)}W" else "${"%.1f".format(tempC)}℃"
+        val title = if (isCharging) "${"%.0f".format(watts)}W" else "${"%.1f".format(tempC)}°C"
         val subText = if (isCharging) "充电中" else "未充电"
 
-        // LLMonitor pattern: Framework Notification.Builder with CHANNEL_ID
         val builder = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
             .setContentTitle(title)
@@ -175,14 +184,12 @@ class DeviceMonitorService : Service() {
                 Intent(this, MainActivity::class.java),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
 
-        // LLMonitor pattern: ProgressStyle + android.requestPromotedOngoing extras on API 36+
         if (Build.VERSION.SDK_INT >= 36) {
             try {
                 val progressStyle = Notification.ProgressStyle()
                     .setProgress(pct)
                 builder.setStyle(progressStyle)
 
-                // THE KEY: android.requestPromotedOngoing extras
                 val bundle = Bundle()
                 bundle.putBoolean(EXTRA_REQUEST_PROMOTED_ONGOING, true)
                 builder.addExtras(bundle)
@@ -197,42 +204,74 @@ class DeviceMonitorService : Service() {
     }
 
     // ============================================================
-    // Battery Monitoring — adaptive polling for power saving
+    // Alert notifications — fire once per cycle
+    // ============================================================
+
+    private fun sendAlert(title: String, text: String) {
+        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        val alert = Notification.Builder(this, ALERT_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setAutoCancel(true)
+            .setContentIntent(PendingIntent.getActivity(this, 1,
+                Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+            .build()
+        nm.notify(ALERT_NOTIFICATION_ID, alert)
+    }
+
+    // ============================================================
+    // Battery polling loop
     // ============================================================
 
     private fun startMonitor() {
         if (monitorRunning) return
         monitorRunning = true
-        batteryReceiver = BatteryReceiver()
-        registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
 
         val runnable = object : Runnable {
             override fun run() {
                 if (!monitorRunning) return
                 val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
-                // Check charging state BEFORE building notification
                 val intent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
                 val plugged = intent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
                 val nowCharging = plugged != 0
+                val pct = run {
+                    val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, 0) ?: 0
+                    val scale = intent?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
+                    if (scale > 0) level * 100 / scale else 0
+                }
+                val tempDeci = intent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0
+                val tempC = tempDeci / 10f
 
-                // Force fluid cloud re-evaluation on state change (cancel + re-notify)
+                // --- State transition → force fluid cloud refresh ---
                 if (prevCharging != null && nowCharging != prevCharging) {
                     nm.cancel(NOTIFICATION_ID)
+                    // Reset alert flags on charge/discharge transition
+                    if (!nowCharging) { tempWarned = false; fullCharged = false }
                 }
                 prevCharging = nowCharging
 
-                val notif = buildNotification(null)
+                // --- One-shot alerts ---
+                // Temperature warning: >42°C, once per charging session
+                if (nowCharging && tempC > 42f && !tempWarned) {
+                    tempWarned = true
+                    sendAlert("⚠️ 电池温度偏高", "${"%.1f".format(tempC)}°C · 建议暂停充电降温")
+                }
+                // Charge complete: 100% with charger still plugged
+                if (nowCharging && pct >= 100 && !fullCharged) {
+                    fullCharged = true
+                    sendAlert("✅ 充电完成", "电池已充满 · 可以拔掉充电器了")
+                }
+
+                // Update main notification
+                val notif = buildNotification(intent)
                 nm.notify(NOTIFICATION_ID, notif)
 
-                val delay = 3000L
-                handler.postDelayed(this, delay)
+                handler.postDelayed(this, 3000L)
             }
         }
         handler.post(runnable)
-    }
-
-    inner class BatteryReceiver : BroadcastReceiver() {
-        override fun onReceive(c: Context?, intent: Intent?) {}
     }
 }

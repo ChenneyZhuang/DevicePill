@@ -20,6 +20,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.outlined.ShowChart
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -38,8 +40,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.hermes.devicepill.BuildConfig
 import kotlin.math.*
-import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     private var hasNotificationPermission = mutableStateOf(false)
@@ -95,8 +97,8 @@ fun readBattery(ctx: Context): BatteryData {
     val plugged = i?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
     val chg = plugged != 0
     val ct = when (plugged) {
-        BatteryManager.BATTERY_PLUGGED_AC -> "超级闪充"; BatteryManager.BATTERY_PLUGGED_USB -> "USB充电"
-        BatteryManager.BATTERY_PLUGGED_WIRELESS -> "无线充电"; else -> if (chg) "充电中" else "未充电"
+        BatteryManager.BATTERY_PLUGGED_AC -> "⚡超级闪充"; BatteryManager.BATTERY_PLUGGED_USB -> "🔌USB充电"
+        BatteryManager.BATTERY_PLUGGED_WIRELESS -> "🛜无线充电"; else -> if (chg) "充电中" else "未充电"
     }
     val hl = when (i?.getIntExtra(BatteryManager.EXTRA_HEALTH, 1) ?: 1) {
         BatteryManager.BATTERY_HEALTH_GOOD -> "良好"; BatteryManager.BATTERY_HEALTH_OVERHEAT -> "过热"
@@ -135,26 +137,23 @@ fun FluidPillApp(hasN: Boolean, requestPermission: () -> Unit = {}) {
     var autoStarted by remember { mutableStateOf(false) }
 
     // Curve history (60 points, 3s each = 3 min window)
-    val powerH = remember { mutableStateListOf<Float>() }; val tempH = remember { mutableStateListOf<Float>() }
-    val voltH = remember { mutableStateListOf<Float>() }; val currH = remember { mutableStateListOf<Float>() }
+    val powerH = remember { mutableStateListOf<Float>() }
+    val tempH = remember { mutableStateListOf<Float>() }
+    val voltH = remember { mutableStateListOf<Float>() }
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            val d = readBattery(ctx)
-            if (powerH.size >= 60) powerH.removeFirst(); powerH.add(d.watts)
-            if (tempH.size >= 60) tempH.removeFirst(); tempH.add(d.tempC)
-            if (voltH.size >= 60) voltH.removeFirst(); voltH.add(d.voltage.toFloat())
-            if (currH.size >= 60) currH.removeFirst(); currH.add(d.currentMa.toFloat())
-            delay(3000)
-        }
-    }
-
+    // Merged battery read: BroadcastReceiver triggers both UI update AND curve collection
     DisposableEffect(ctx) {
         val rcv = object : BroadcastReceiver() {
             override fun onReceive(c: Context?, intent: Intent?) {
-                val d = readBattery(ctx); pct = d.pct; chg = d.charging; watts = d.watts
+                val d = readBattery(ctx)
+                // Update UI cards
+                pct = d.pct; chg = d.charging; watts = d.watts
                 v = d.voltage; ma = d.currentMa; tc = d.tempC; ct = d.chargeType
                 hl = d.health; tech = d.tech
+                // Update curves (same source, no extra readBattery call)
+                if (powerH.size >= 60) powerH.removeFirst(); powerH.add(d.watts)
+                if (tempH.size >= 60) tempH.removeFirst(); tempH.add(d.tempC)
+                if (voltH.size >= 60) voltH.removeFirst(); voltH.add(d.voltage.toFloat())
             }
         }
         ctx.registerReceiver(rcv, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
@@ -188,33 +187,26 @@ fun FluidPillApp(hasN: Boolean, requestPermission: () -> Unit = {}) {
                 Spacer(Modifier.height(10.dp))
                 AnimatedVisibility(chg) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Badge(ct, watts, ring[1]); Spacer(Modifier.height(14.dp)) } }
 
-                // ── LLMonitor layout: card groups ──
-                // Power + Current (LLMonitor: card_power_current)
-                CardGroup(hasN, Build.VERSION.SDK_INT)
                 if (!hasN && Build.VERSION.SDK_INT >= 33) { NotifCard(ctx, requestPermission); Spacer(Modifier.height(14.dp)) }
 
-                // Auto-start service when permission is granted and not running yet
+                // Auto-start service when permission is granted
                 LaunchedEffect(hasN) {
                     if (hasN && !autoStarted && Build.VERSION.SDK_INT >= 33) {
                         autoStarted = true; skipTicker = true; DeviceMonitorService.start(ctx); running = true
                     }
                 }
-                DualCard("功率", if (watts != 0f) "${"%.1f".format(watts)}W" else "--W", "电流", if (ma != 0) "${ma}mA" else "--", Icons.Outlined.Bolt, Icons.Outlined.Speed, chg, ring[1])
+                DualCard("功率", if (watts != 0f) "${"%.1f".format(watts)}W" else "--W", "电流",
+                    if (ma != 0) { val a = abs(ma); if (a >= 1000) "${"%.1f".format(a/1000f)}A" else "${a}mA" } else "--", Icons.Outlined.Bolt, Icons.Outlined.Speed, chg, ring[1])
                 Spacer(Modifier.height(10.dp))
 
-                // Voltage + Temperature (LLMonitor: card_voltage_temp)
                 DualCard("电压", if (v > 0) "${"%.2f".format(v)}V" else "--V", "温度", "${"%.1f".format(tc)}℃", Icons.Filled.BatteryChargingFull, Icons.Filled.DeviceThermostat, chg, ring[1], (tc > 40))
                 Spacer(Modifier.height(10.dp))
 
-                // Supply + Health (LLMonitor: card_supply_health)
                 DualCard("供电", ct, "健康", hl, Icons.Outlined.Power, Icons.Outlined.FavoriteBorder, chg, ring[1])
                 Spacer(Modifier.height(14.dp))
 
-                // Power Curve
-                if (powerH.size >= 2) { CurveCard("充电功率", powerH, ring, "W", watts) { Spacer(Modifier.height(12.dp)) } }
-                // Temperature Curve
+                if (powerH.size >= 2) { CurveCard("功率", powerH, ring, "W", watts) { Spacer(Modifier.height(12.dp)) } }
                 if (tempH.size >= 2) { CurveCard("温度", tempH, listOf(Color(0xFF22C55E), Color(0xFFEAB308), Color(0xFFEF4444)), "℃", tc) { Spacer(Modifier.height(12.dp)) } }
-                // Voltage Curve
                 if (voltH.size >= 2) { CurveCard("电压", voltH, listOf(Color(0xFF3B82F6), Color(0xFF6366F1)), "V", v.toFloat()) { Spacer(Modifier.height(12.dp)) } }
 
                 Spacer(Modifier.height(10.dp))
@@ -224,7 +216,7 @@ fun FluidPillApp(hasN: Boolean, requestPermission: () -> Unit = {}) {
                 Spacer(Modifier.height(16.dp))
                 Guide(ctx, ring[1])
                 Spacer(Modifier.height(10.dp))
-                Text("FluidPill v2.1.6", fontSize = 10.sp, color = LL.t3.copy(alpha = 0.4f))
+                Text("FluidPill v${BuildConfig.VERSION_NAME}", fontSize = 10.sp, color = LL.t3.copy(alpha = 0.4f))
                 Spacer(Modifier.height(36.dp))
             }
         }
@@ -254,7 +246,6 @@ fun ActiveRing(pct: Int, chg: Boolean, watts: Float, ring: List<Color>, mod: Mod
 fun Badge(type: String, watts: Float, acc: Color) {
     Surface(shape = RoundedCornerShape(18.dp), color = acc.copy(alpha = 0.08f), border = androidx.compose.foundation.BorderStroke(1.dp, acc.copy(alpha = 0.15f))) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("⚡", fontSize = 13.sp); Spacer(Modifier.width(6.dp))
             Text(type, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = acc)
             if (watts >= 0.5f) { Text(" · ", color = acc.copy(alpha = 0.4f)); Text("${"%.1f".format(watts)}W", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = acc) }
         }
@@ -262,7 +253,7 @@ fun Badge(type: String, watts: Float, acc: Color) {
 }
 
 // ============================================================
-// Dual Card (LLMonitor: InfoCard pair)
+// Dual Card
 // ============================================================
 @Composable
 fun DualCard(l1: String, v1: String, l2: String, v2: String, i1: androidx.compose.ui.graphics.vector.ImageVector, i2: androidx.compose.ui.graphics.vector.ImageVector, chg: Boolean, acc: Color, warn: Boolean = false) {
@@ -285,7 +276,7 @@ fun InfoCard(label: String, value: String, icon: androidx.compose.ui.graphics.ve
 }
 
 // ============================================================
-// Curve Card (LLMonitor: PowerCurveCard with grid lines)
+// Curve Card
 // ============================================================
 @Composable
 fun CurveCard(title: String, vals: List<Float>, cols: List<Color>, unit: String, cur: Float, spacer: @Composable () -> Unit = {}) {
@@ -297,7 +288,7 @@ fun CurveCard(title: String, vals: List<Float>, cols: List<Color>, unit: String,
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = LL.surface), border = androidx.compose.foundation.BorderStroke(0.5.dp, LL.border)) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.ShowChart, null, tint = lc.copy(alpha = 0.5f), modifier = Modifier.size(14.dp))
+                Icon(Icons.AutoMirrored.Outlined.ShowChart, null, tint = lc.copy(alpha = 0.5f), modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(title, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = LL.t1)
                 Spacer(Modifier.weight(1f))
@@ -310,14 +301,12 @@ fun CurveCard(title: String, vals: List<Float>, cols: List<Color>, unit: String,
                     val w = size.width; val h = size.height; val pad = 6f
                     val stepX = (w - pad * 2) / (vals.size - 1)
 
-                    // Grid lines (LLMonitor: MAX_POWER_GRID_LINES)
                     val gridLines = 4
                     for (g in 0..gridLines) {
                         val y = pad + (h - pad * 2) * g / gridLines
                         drawLine(Color(0xFF2A2A30), Offset(pad, y), Offset(w - pad, y), 0.5f)
                     }
 
-                    // Fill
                     val fp = Path().apply {
                         moveTo(pad, h - pad)
                         vals.forEachIndexed { i, v -> lineTo(pad + i * stepX, h - pad - ((v - minV) / range * (h - pad * 2))) }
@@ -325,7 +314,6 @@ fun CurveCard(title: String, vals: List<Float>, cols: List<Color>, unit: String,
                     }
                     drawPath(fp, fill)
 
-                    // Line
                     val lp = Path()
                     vals.forEachIndexed { i, v ->
                         val x = pad + i * stepX; val y = h - pad - ((v - minV) / range * (h - pad * 2))
@@ -333,11 +321,9 @@ fun CurveCard(title: String, vals: List<Float>, cols: List<Color>, unit: String,
                     }
                     drawPath(lp, lc, style = Stroke(width = 2.5f, cap = StrokeCap.Round, join = StrokeJoin.Round))
 
-                    // End dot
                     val lx = pad + (vals.size - 1) * stepX; val ly = h - pad - ((vals.last() - minV) / range * (h - pad * 2))
                     drawCircle(lc, 3.5f, Offset(lx, ly)); drawCircle(lc.copy(alpha = 0.2f), 7f, Offset(lx, ly))
                 }
-                // Y-axis labels
                 val format: (Float) -> String = { if (range >= 100f) "%.0f".format(it) else "%.1f".format(it) }
                 Column(Modifier.fillMaxSize().padding(start = 2.dp, end = 0.dp, top = 2.dp, bottom = 0.dp), verticalArrangement = Arrangement.SpaceBetween) {
                     Text("${format(maxV)}$unit", fontSize = 8.sp, color = LL.t3.copy(alpha = 0.5f))
@@ -349,10 +335,6 @@ fun CurveCard(title: String, vals: List<Float>, cols: List<Color>, unit: String,
     spacer()
 }
 
-@Composable
-fun CardGroup(hasN: Boolean, sdk: Int) {}
-
-// ============================================================
 @Composable fun NotifCard(ctx: Context, requestPermission: () -> Unit = {}) {
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFEF4444).copy(alpha = 0.06f)), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.2f))) {
         Row(Modifier.fillMaxWidth().clickable { requestPermission() }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -380,7 +362,7 @@ fun CardGroup(hasN: Boolean, sdk: Int) {}
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Info, null, tint = acc, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(8.dp))
                 Text("设置指南", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = LL.t1); Spacer(Modifier.weight(1f))
-                TextButton(onClick = { ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply { putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName) }) }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) { Text("系统设置", fontSize = 12.sp, color = acc); Icon(Icons.Filled.OpenInNew, null, tint = acc, modifier = Modifier.size(11.dp)) }
+                TextButton(onClick = { ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply { putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName) }) }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) { Text("系统设置", fontSize = 12.sp, color = acc); Icon(Icons.AutoMirrored.Filled.OpenInNew, null, tint = acc, modifier = Modifier.size(11.dp)) }
             }
             Spacer(Modifier.height(8.dp))
             Step("1", "授权通知权限", "App 内红色卡片点击授权", acc); Step("2", "开启流体云", "系统设置 → 通知 → 流体云 → FluidPill", acc)

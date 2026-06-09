@@ -18,7 +18,7 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("/tmp/devicepill.jks")
+            storeFile = file("devicepill.jks")
             storePassword = "android"
             keyAlias = "devicepill"
             keyPassword = "android"
